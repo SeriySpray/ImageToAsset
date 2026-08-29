@@ -6,9 +6,9 @@ import { HalftoneSettings } from '../types';
 function createContrastLUT(contrast: number, invert: boolean): Uint8Array {
   const lut = new Uint8Array(256);
   const c = Math.max(0, Math.min(100, contrast)) / 100;
-  const blackFloor = c * 0.12;
-  const whiteCeil = 1.0 - c * 0.08;
-  const power = c > 0.05 ? 1 + c * 2.2 : 1;
+  const blackFloor = c * 0.08;
+  const whiteCeil = 1.0 - c * 0.06;
+  const power = c > 0.05 ? 1 + c * 1.8 : 1;
 
   for (let i = 0; i < 256; i++) {
     let val = i / 255;
@@ -111,11 +111,10 @@ export function renderHalftone(
     const S = Math.max(2, dotSize);
     const halfS = S * 0.5;
     const invS = 1 / S;
-    // Bounded max radius to keep dots separated on white paper:
-    const maxRadius = halfS * 0.88;
+    // Bounded max radius to keep dots separated on white paper (radius = 0.45 * S, diameter = 0.90 * S)
+    const maxRadius = halfS * 0.90;
     const maxR2 = maxRadius * maxRadius;
-    const marginDist = Math.max(2, S * 0.8);
-    const filterStep = Math.max(1, Math.round(S * 0.35));
+    const marginDist = Math.max(2, S * 0.85);
 
     for (let y = 0; y < height; y++) {
       const rowOffset = y * width;
@@ -155,34 +154,30 @@ export function renderHalftone(
         const ixc = Math.max(0, Math.min(width - 1, (xc + 0.5) | 0));
         const iyc = Math.max(0, Math.min(height - 1, (yc + 0.5) | 0));
 
-        // Sample tone at cell center with 5-tap kernel for smooth size graduation at color boundaries
-        const centerIdx = iyc * width + ixc;
-        const c0 = lumBytes[centerIdx];
+        // High-definition tone synthesis:
+        // Blend 65% cell center (for circular dot stability) + 35% local pixel (for razor-sharp edge & texture fidelity)
+        const centerLum = lumBytes[iyc * width + ixc];
+        const localLum = lumBytes[i];
+        const edgeDelta = localLum - centerLum;
+        const sharpLum = Math.max(0, Math.min(255, ((centerLum * 5 + localLum * 3) >> 3) + ((edgeDelta * 3) >> 3)));
 
-        const xL = Math.max(0, ixc - filterStep);
-        const xR = Math.min(width - 1, ixc + filterStep);
-        const yT = Math.max(0, iyc - filterStep);
-        const yB = Math.min(height - 1, iyc + filterStep);
-
-        const cL = lumBytes[iyc * width + xL];
-        const cR = lumBytes[iyc * width + xR];
-        const cT = lumBytes[yT * width + ixc];
-        const cB = lumBytes[yB * width + ixc];
-
-        const smoothedLum = (c0 * 4 + cL + cR + cT + cB) >> 3;
-        const rawDarkness = invert ? smoothedLum / 255 : (255 - smoothedLum) / 255;
+        const rawDarkness = invert ? sharpLum / 255 : (255 - sharpLum) / 255;
 
         // Pure white background (no dots)
-        if (rawDarkness <= 0.03) {
+        if (rawDarkness <= 0.02) {
           patternPixels32[i] = 0xFFFFFFFF;
           continue;
         }
 
-        // Cell-based threshold radius ensures every dot is an intact, complete round circle whose size scales smoothly
+        // Multi-tone ink shading: modulate ink darkness with local tone for photographic depth
+        const baseInk = Math.max(0, Math.min(150, (sharpLum * 0.32) | 0));
+        const inkVal = invert ? (255 - baseInk) : baseInk;
+
+        // Dot radius scales with darkness; in 100% black darkness=1.0, thresholdR2=maxR2 (distinct separated dots)
         const thresholdR2 = rawDarkness * maxR2;
 
         if (distSq <= thresholdR2) {
-          patternPixels32[i] = 0xFF000000; // Solid black circle interior
+          patternPixels32[i] = 0xFF000000 | (inkVal << 16) | (inkVal << 8) | inkVal;
           continue;
         }
 
@@ -192,11 +187,12 @@ export function renderHalftone(
           continue;
         }
 
-        // Smooth sub-pixel anti-aliased circular boundary
+        // Crisp sub-pixel anti-aliasing with tonal ink ramp
         const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
-        if (edgeDist < 0.9) {
-          const grayVal = Math.round(edgeDist * 280);
-          const clamped = Math.max(0, Math.min(255, grayVal));
+        if (edgeDist < 0.85) {
+          const t = edgeDist / 0.85;
+          const rampVal = (inkVal + (255 - inkVal) * t) | 0;
+          const clamped = Math.max(0, Math.min(255, rampVal));
           patternPixels32[i] = 0xFF000000 | (clamped << 16) | (clamped << 8) | clamped;
         } else {
           patternPixels32[i] = 0xFFFFFFFF;

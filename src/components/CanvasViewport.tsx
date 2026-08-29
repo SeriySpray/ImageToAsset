@@ -290,15 +290,15 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     dispCtx.restore();
   }, [totalW, totalH, tornEdge.enabled]);
 
-  // Screen to Image coordinates conversion
+  // Screen to Image coordinates conversion (Unclamped for smooth cross-border painting)
   const screenToImage = useCallback(
     (clientX: number, clientY: number): Point | null => {
       const container = containerRef.current;
       if (!container || !image || totalW === 0 || totalH === 0) return null;
 
       const rect = container.getBoundingClientRect();
-      const mouseX = clientY !== undefined ? clientX - rect.left : 0;
-      const mouseY = clientY !== undefined ? clientY - rect.top : 0;
+      const mouseX = clientX - rect.left;
+      const mouseY = clientY - rect.top;
 
       const stageW = totalW * scale;
       const stageH = totalH * scale;
@@ -309,12 +309,14 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       const imgY = (mouseY - stageY) / scale;
 
       return {
-        x: Math.max(0, Math.min(totalW, Math.round(imgX))),
-        y: Math.max(0, Math.min(totalH, Math.round(imgY))),
+        x: Math.round(imgX),
+        y: Math.round(imgY),
       };
     },
     [image, scale, pan, totalW, totalH]
   );
+
+  const mouseScreenPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Mouse Down
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -332,9 +334,16 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const pt = screenToImage(e.clientX, e.clientY);
     if (!pt) return;
 
+    const container = containerRef.current;
+    const sPt = container
+      ? { x: e.clientX - container.getBoundingClientRect().left, y: e.clientY - container.getBoundingClientRect().top }
+      : null;
+
     isInteractingRef.current = true;
     setIsInteracting(true);
     lastPointRef.current = pt;
+    mousePosRef.current = pt;
+    mouseScreenPosRef.current = sPt;
 
     const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
     if (!maskCtx) return;
@@ -357,27 +366,35 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       maskCtx.fill();
 
       renderLiveStrokePreview();
-      drawOverlay(pt);
+      drawOverlay(sPt);
     } else if (activeTool === 'box-select') {
       const initialBox = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
       setBoxSelection(initialBox);
       boxSelectionRef.current = initialBox;
-      drawOverlay(pt);
+      drawOverlay(sPt);
     } else if (activeTool === 'lasso' || activeTool === 'magic-wand') {
       const initialLasso = [pt];
       setFreehandPoints(initialLasso);
       freehandPointsRef.current = initialLasso;
-      drawOverlay(pt);
+      drawOverlay(sPt);
     }
   };
 
   // Mouse Move
   const handleMouseMove = (e: React.MouseEvent) => {
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const sX = e.clientX - rect.left;
+    const sY = e.clientY - rect.top;
+    const sPt = { x: sX, y: sY };
+    mouseScreenPosRef.current = sPt;
+
     const pt = screenToImage(e.clientX, e.clientY);
     mousePosRef.current = pt;
 
     if (!isInteractingRef.current) {
-      drawOverlay(pt);
+      drawOverlay(sPt);
       return;
     }
 
@@ -418,17 +435,17 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
       lastPointRef.current = pt;
       renderLiveStrokePreview();
-      drawOverlay(pt);
+      drawOverlay(sPt);
     } else if (activeTool === 'box-select' && boxSelectionRef.current) {
       const updatedBox = { ...boxSelectionRef.current, x1: pt.x, y1: pt.y };
       setBoxSelection(updatedBox);
       boxSelectionRef.current = updatedBox;
-      drawOverlay(pt);
+      drawOverlay(sPt);
     } else if ((activeTool === 'lasso' || activeTool === 'magic-wand') && freehandPointsRef.current.length > 0) {
       const updatedLasso = [...freehandPointsRef.current, pt];
       setFreehandPoints(updatedLasso);
       freehandPointsRef.current = updatedLasso;
-      drawOverlay(pt);
+      drawOverlay(sPt);
     }
   };
 
@@ -449,7 +466,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
     if (activeTool === 'brush' || activeTool === 'eraser') {
       commitMaskCanvas();
-      drawOverlay(mousePosRef.current);
+      drawOverlay(mouseScreenPosRef.current);
     } else if (activeTool === 'box-select' && curBox) {
       const x = Math.min(curBox.x0, curBox.x1);
       const y = Math.min(curBox.y0, curBox.y1);
@@ -476,7 +493,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setBoxSelection(null);
       boxSelectionRef.current = null;
       commitMaskCanvas();
-      drawOverlay(mousePosRef.current);
+      drawOverlay(mouseScreenPosRef.current);
     } else if (activeTool === 'magic-wand' && curLasso.length > 0 && sourceCanvasRef.current) {
       // Intelligent Smart Lasso Object Cutout
       const mode = e.altKey ? 'subtract' : (e.shiftKey ? 'add' : 'replace');
@@ -495,7 +512,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setFreehandPoints([]);
       freehandPointsRef.current = [];
       onUpdateMask(targetMask);
-      drawOverlay(mousePosRef.current);
+      drawOverlay(mouseScreenPosRef.current);
     } else if (activeTool === 'lasso' && curLasso.length > 2) {
       if (e.altKey) {
         maskCtx.globalCompositeOperation = 'destination-out';
@@ -533,41 +550,63 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setFreehandPoints([]);
       freehandPointsRef.current = [];
       commitMaskCanvas();
-      drawOverlay(mousePosRef.current);
+      drawOverlay(mouseScreenPosRef.current);
     } else {
       setFreehandPoints([]);
       freehandPointsRef.current = [];
-      drawOverlay(mousePosRef.current);
+      drawOverlay(mouseScreenPosRef.current);
     }
   };
 
-  // Synchronous Direct Overlay Renderer (60+ FPS without React state latency)
-  const drawOverlay = useCallback((overridePt?: Point | null) => {
+  // Synchronous Direct Viewport Overlay Renderer (60+ FPS across full canvas)
+  const drawOverlay = useCallback((overrideScreenPt?: { x: number; y: number } | null) => {
     const overlay = overlayCanvasRef.current;
-    if (!overlay || totalW === 0 || totalH === 0) return;
+    const container = containerRef.current;
+    if (!overlay || !container) return;
+
+    const contW = container.clientWidth;
+    const contH = container.clientHeight;
+    if (contW === 0 || contH === 0) return;
+
+    if (overlay.width !== contW || overlay.height !== contH) {
+      overlay.width = contW;
+      overlay.height = contH;
+    }
+
     const ctx = overlay.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, totalW, totalH);
+    ctx.clearRect(0, 0, contW, contH);
 
-    const pt = overridePt !== undefined ? overridePt : mousePosRef.current;
+    const sPt = overrideScreenPt !== undefined ? overrideScreenPt : mouseScreenPosRef.current;
     const curScale = scaleRef.current;
+    const curPan = panRef.current;
+
+    const stageW = totalW * curScale;
+    const stageH = totalH * curScale;
+    const stageX = (contW - stageW) / 2 + curPan.x;
+    const stageY = (contH - stageH) / 2 + curPan.y;
+
+    const toScreen = (imgX: number, imgY: number) => ({
+      x: stageX + imgX * curScale,
+      y: stageY + imgY * curScale,
+    });
 
     // 1. Box Selection
     const curBox = boxSelectionRef.current;
     if (curBox) {
       ctx.save();
-      const minX = Math.min(curBox.x0, curBox.x1);
-      const minY = Math.min(curBox.y0, curBox.y1);
-      const w = Math.abs(curBox.x1 - curBox.x0);
-      const h = Math.abs(curBox.y1 - curBox.y0);
+      const p0 = toScreen(Math.min(curBox.x0, curBox.x1), Math.min(curBox.y0, curBox.y1));
+      const p1 = toScreen(Math.max(curBox.x0, curBox.x1), Math.max(curBox.y0, curBox.y1));
+      const w = p1.x - p0.x;
+      const h = p1.y - p0.y;
 
       ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2 / curScale;
-      ctx.setLineDash([5 / curScale, 5 / curScale]);
-      ctx.strokeRect(minX, minY, w, h);
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeRect(p0.x, p0.y, w, h);
       ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
-      ctx.fillRect(minX, minY, w, h);
+      ctx.fillRect(p0.x, p0.y, w, h);
       ctx.restore();
     }
 
@@ -576,12 +615,14 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (curPoints.length > 1) {
       ctx.save();
       ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2.5 / curScale;
-      ctx.setLineDash([5 / curScale, 5 / curScale]);
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([5, 5]);
       ctx.beginPath();
-      ctx.moveTo(curPoints[0].x, curPoints[0].y);
+      const first = toScreen(curPoints[0].x, curPoints[0].y);
+      ctx.moveTo(first.x, first.y);
       for (let i = 1; i < curPoints.length; i++) {
-        ctx.lineTo(curPoints[i].x, curPoints[i].y);
+        const p = toScreen(curPoints[i].x, curPoints[i].y);
+        ctx.lineTo(p.x, p.y);
       }
       ctx.stroke();
 
@@ -593,20 +634,20 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       ctx.restore();
     }
 
-    // 3. Interactive Circular Cursor for Brush & Eraser (Orange, Real-time 60+ FPS)
-    if (pt && (activeTool === 'brush' || activeTool === 'eraser')) {
+    // 3. Interactive Circular Cursor for Brush & Eraser (Orange, Full Viewport Tracking)
+    if (sPt && (activeTool === 'brush' || activeTool === 'eraser')) {
       ctx.save();
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, brushSize, 0, Math.PI * 2);
+      ctx.arc(sPt.x, sPt.y, brushSize * curScale, 0, Math.PI * 2);
       ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2 / curScale;
+      ctx.lineWidth = 2;
       ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
       ctx.fill();
       ctx.stroke();
 
       // Precision Center Crosshair Dot
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 2.5 / curScale, 0, Math.PI * 2);
+      ctx.arc(sPt.x, sPt.y, 2.5, 0, Math.PI * 2);
       ctx.fillStyle = '#f59e0b';
       ctx.fill();
       ctx.restore();
@@ -616,11 +657,12 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   // Sync Overlay Canvas on state/props changes
   useEffect(() => {
     const overlay = overlayCanvasRef.current;
-    if (!overlay || !image || totalW === 0 || totalH === 0) return;
-    overlay.width = totalW;
-    overlay.height = totalH;
+    const container = containerRef.current;
+    if (!overlay || !container || !image) return;
+    overlay.width = container.clientWidth;
+    overlay.height = container.clientHeight;
     drawOverlay();
-  }, [image, boxSelection, freehandPoints, activeTool, brushSize, scale, totalW, totalH, drawOverlay]);
+  }, [image, boxSelection, freehandPoints, activeTool, brushSize, scale, pan, totalW, totalH, drawOverlay]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -669,6 +711,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         isInteractingRef.current = false;
         setIsInteracting(false);
         mousePosRef.current = null;
+        mouseScreenPosRef.current = null;
         drawOverlay(null);
       }}
       onDragOver={handleDragOver}
@@ -677,6 +720,12 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     >
       {/* Hidden Offscreen Canvases */}
       <canvas ref={sourceCanvasRef} className="hidden" />
+
+      {/* Full Viewport Interactive Overlay Canvas (Cursor & Selections everywhere) */}
+      <canvas
+        ref={overlayCanvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-none z-30"
+      />
 
       {/* Main Interactive Stage */}
       {image && totalW > 0 && totalH > 0 && (
@@ -696,14 +745,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
             width={totalW}
             height={totalH}
             className="absolute top-0 left-0 w-full h-full pointer-events-none"
-          />
-
-          {/* Interactive Selection Overlay Canvas */}
-          <canvas
-            ref={overlayCanvasRef}
-            width={totalW}
-            height={totalH}
-            className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
           />
         </div>
       )}

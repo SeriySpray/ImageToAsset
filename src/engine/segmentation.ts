@@ -17,10 +17,9 @@ export function createFullMask(width: number, height: number): Uint8ClampedArray
 }
 
 /**
- * Depth-Limited Strict-Barrier Smart Lasso Cutout Engine:
- * Restricts background peeling strictly to a narrow outer margin (15-30px) immediately adjacent to
- * the drawn lasso line, using ultra-strict edge gradients (E > 10) and color difference thresholds (Δ < 10).
- * Completely protects all internal content (t-shirts, skin, clothes, details) from being eroded.
+ * Non-Restorative Smart Lasso Eraser / Peeler Engine:
+ * Strictly erases background pixels without EVER restoring or reviving previously deleted/erased fragments.
+ * The operation is purely subtractive and protective.
  */
 export function smartLassoCutout(
   srcCtx: CanvasRenderingContext2D,
@@ -33,9 +32,6 @@ export function smartLassoCutout(
   snappingDepth = 28
 ): void {
   if (lassoPoints.length === 0) return;
-  if (existingMask && mode !== 'replace') {
-    outputMask.set(existingMask);
-  }
 
   const imgData = srcCtx.getImageData(0, 0, totalWidth, totalHeight);
   const pixels = imgData.data;
@@ -137,7 +133,6 @@ export function smartLassoCutout(
       const gradColor = Math.max(dr, dg, db);
 
       const maxEdge = Math.max(gradLum, gradColor);
-      // Ultra-strict edge barrier (detects even subtle edges on light backgrounds)
       if (maxEdge > 10) {
         edgeBarrier[idx] = 1;
       }
@@ -145,10 +140,8 @@ export function smartLassoCutout(
   }
 
   // 4. Depth-Limited Inward Wavefront from Lasso Perimeter
-  // Maximum inward penetration buffer (strictly limits how deep background peeling can go)
   const maxInwardDistance = Math.max(8, Math.min(snappingDepth, Math.round(Math.min(boxW, boxH) * 0.18)));
 
-  // Queue stores: x, y, seedR, seedG, seedB, currentDepth
   const visited = new Uint8Array(totalWidth * totalHeight);
   const isBackground = new Uint8Array(totalWidth * totalHeight);
   const queue: number[] = [];
@@ -183,7 +176,6 @@ export function smartLassoCutout(
     const sb = queue[head++];
     const currentDepth = queue[head++];
 
-    // If reached maximum inward fence depth, STOP expanding deeper!
     if (currentDepth >= maxInwardDistance) {
       continue;
     }
@@ -207,7 +199,6 @@ export function smartLassoCutout(
           const npidx = nidx * 4;
           const na = pixels[npidx + 3];
 
-          // Transparent buffer is always background
           if (na < 15) {
             visited[nidx] = 1;
             isBackground[nidx] = 1;
@@ -219,14 +210,11 @@ export function smartLassoCutout(
           const ng = pixels[npidx + 1];
           const nb = pixels[npidx + 2];
 
-          // Strict step color jump and strict seed drift
           const stepDiff = Math.abs(nr - qr) + Math.abs(ng - qg) + Math.abs(nb - qb);
           const seedDiff = Math.abs(nr - sr) + Math.abs(ng - sg) + Math.abs(nb - sb);
 
-          // STRICT FIRST-HIT STOP RULE:
-          // Stop immediately upon hitting an edge barrier or subtle color jump
           if (edgeBarrier[nidx] || stepDiff > 10 || seedDiff > 20) {
-            visited[nidx] = 1; // Stop wavefront, belongs to SUBJECT
+            visited[nidx] = 1;
           } else {
             visited[nidx] = 1;
             isBackground[nidx] = 1;
@@ -237,43 +225,54 @@ export function smartLassoCutout(
     }
   }
 
-  // 5. Subject is all pixels inside lasso that are NOT background
-  const isSubject = new Uint8Array(totalWidth * totalHeight);
-  for (let y = minY; y <= maxY; y++) {
-    const rowOffset = y * totalWidth;
-    for (let x = minX; x <= maxX; x++) {
-      if (isInsideLasso(x, y) && !isBackground[rowOffset + x]) {
-        isSubject[rowOffset + x] = 1;
-      }
-    }
-  }
-
-  // 6. Apply to Output Mask according to Mode
+  // 5. Apply to Output Mask: NEVER restore previously erased (0) pixels!
   if (mode === 'replace') {
-    outputMask.fill(0);
-    for (let y = minY; y <= maxY; y++) {
-      const rowOffset = y * totalWidth;
-      for (let x = minX; x <= maxX; x++) {
-        if (isSubject[rowOffset + x]) {
-          outputMask[rowOffset + x] = 255;
-        }
-      }
+    // Initialize with existing mask state
+    if (existingMask) {
+      outputMask.set(existingMask);
+    } else {
+      outputMask.fill(255);
     }
-  } else if (mode === 'add') {
+
+    // Erase background pixels detected along lasso ribbon
     for (let y = minY; y <= maxY; y++) {
       const rowOffset = y * totalWidth;
       for (let x = minX; x <= maxX; x++) {
-        if (isSubject[rowOffset + x]) {
-          outputMask[rowOffset + x] = 255;
+        const idx = rowOffset + x;
+        if (isInsideLasso(x, y) && isBackground[idx]) {
+          outputMask[idx] = 0;
         }
       }
     }
   } else if (mode === 'subtract') {
+    if (existingMask) {
+      outputMask.set(existingMask);
+    } else {
+      outputMask.fill(255);
+    }
+
     for (let y = minY; y <= maxY; y++) {
       const rowOffset = y * totalWidth;
       for (let x = minX; x <= maxX; x++) {
-        if (isSubject[rowOffset + x]) {
-          outputMask[rowOffset + x] = 0;
+        const idx = rowOffset + x;
+        if (isInsideLasso(x, y) && !isBackground[idx]) {
+          outputMask[idx] = 0;
+        }
+      }
+    }
+  } else if (mode === 'add') {
+    if (existingMask) {
+      outputMask.set(existingMask);
+    } else {
+      outputMask.fill(0);
+    }
+
+    for (let y = minY; y <= maxY; y++) {
+      const rowOffset = y * totalWidth;
+      for (let x = minX; x <= maxX; x++) {
+        const idx = rowOffset + x;
+        if (isInsideLasso(x, y) && !isBackground[idx]) {
+          outputMask[idx] = 255;
         }
       }
     }

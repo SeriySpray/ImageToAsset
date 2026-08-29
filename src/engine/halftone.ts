@@ -42,6 +42,7 @@ export function renderHalftone(
   height: number,
   settings: HalftoneSettings
 ): void {
+  const t0 = performance.now();
   targetCtx.clearRect(0, 0, width, height);
 
   const imgData = sourceCtx.getImageData(0, 0, width, height);
@@ -89,6 +90,8 @@ export function renderHalftone(
   // If pure grayscale contrast, output immediately (takes ~0.5ms total!)
   if (mode === 'grayscale-contrast') {
     targetCtx.drawImage(grayCanvas, 0, 0);
+    const t1 = performance.now();
+    console.log(`[ImageToAsset Perf] Grayscale contrast rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
     return;
   }
 
@@ -211,4 +214,7 @@ export function renderHalftone(
   } else {
     targetCtx.drawImage(htPatternCanvas, 0, 0);
   }
+
+  const t1 = performance.now();
+  console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
 }

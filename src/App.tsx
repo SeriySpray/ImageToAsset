@@ -66,6 +66,7 @@ export const App: React.FC = () => {
 
   // Load image into memory with automatic working-canvas clamping for ultra-fast 60 FPS performance
   const loadImage = useCallback((imgElement: HTMLImageElement, autoCutout = false) => {
+    const t0 = performance.now();
     rawImageRef.current = imgElement;
     const origW = imgElement.naturalWidth || imgElement.width;
     const origH = imgElement.naturalHeight || imgElement.height;
@@ -124,26 +125,32 @@ export const App: React.FC = () => {
     const fitScale = Math.min(1, Math.min(maxW / (workW + currentPad * 2), maxH / (workH + currentPad * 2)) * 0.88);
     setScale(Math.max(0.15, fitScale));
     setPan({ x: 0, y: 0 });
+
+    const t1 = performance.now();
+    console.log(`[ImageToAsset Perf] Image setup completed in ${(t1 - t0).toFixed(2)}ms (working size: ${workW}x${workH}, padded total: ${workW + currentPad * 2}x${workH + currentPad * 2})`);
   }, [initializePaddedMask, tornEdge.canvasPadding]);
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (typeof e.target?.result === 'string') {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => loadImage(img, false);
-        img.src = e.target.result;
-      }
+    const t0 = performance.now();
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const t1 = performance.now();
+      console.log(`[ImageToAsset Perf] User file loaded in ${(t1 - t0).toFixed(2)}ms (original resolution: ${img.naturalWidth}x${img.naturalHeight})`);
+      loadImage(img, false);
     };
-    reader.readAsDataURL(file);
+    img.src = objectUrl;
   };
 
   const handleSelectSample = (samplePath: string, presetId?: string) => {
+    const t0 = performance.now();
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
+      const t1 = performance.now();
+      console.log(`[ImageToAsset Perf] Sample image fetched in ${(t1 - t0).toFixed(2)}ms (${samplePath})`);
       loadImage(img, false);
       if (presetId) {
         const preset = PRESETS.find((p) => p.id === presetId);
@@ -181,6 +188,7 @@ export const App: React.FC = () => {
 
   // Mask Update with Undo Stack preservation
   const handleUpdateMask = useCallback((newMask: Uint8ClampedArray) => {
+    const t0 = performance.now();
     setMask((currentMask) => {
       if (currentMask) {
         setUndoStack((prev) => [...prev.slice(-35), new Uint8ClampedArray(currentMask)]);
@@ -188,6 +196,8 @@ export const App: React.FC = () => {
       }
       return newMask;
     });
+    const t1 = performance.now();
+    console.log(`[ImageToAsset Perf] Mask updated and committed in ${(t1 - t0).toFixed(2)}ms`);
   }, []);
 
   // Undo
@@ -197,6 +207,7 @@ export const App: React.FC = () => {
     setRedoStack((r) => [...r, new Uint8ClampedArray(mask)]);
     setUndoStack((u) => u.slice(0, -1));
     setMask(prev);
+    console.log(`[ImageToAsset Perf] Undo action performed`);
   }, [undoStack, mask]);
 
   // Redo
@@ -206,11 +217,13 @@ export const App: React.FC = () => {
     setUndoStack((u) => [...u, new Uint8ClampedArray(mask)]);
     setRedoStack((r) => r.slice(0, -1));
     setMask(next);
+    console.log(`[ImageToAsset Perf] Redo action performed`);
   }, [redoStack, mask]);
 
   // On-demand Smart AI Cutout
   const handleSmartAutoCutout = () => {
     if (!image || totalW === 0 || totalH === 0) return;
+    const t0 = performance.now();
     const autoMask = new Uint8ClampedArray(totalW * totalH);
     const offCanvas = document.createElement('canvas');
     offCanvas.width = totalW;
@@ -226,6 +239,8 @@ export const App: React.FC = () => {
       });
       handleUpdateMask(autoMask);
     }
+    const t1 = performance.now();
+    console.log(`[ImageToAsset Perf] Smart auto cutout completed in ${(t1 - t0).toFixed(2)}ms`);
   };
 
   // Keyboard Shortcuts
@@ -367,6 +382,7 @@ export const App: React.FC = () => {
 
   // Export 1x, 2x, 4x from full original resolution
   const handleDownload = (exportScale = 1) => {
+    const t0 = performance.now();
     const srcImg = rawImageRef.current || image;
     if (!srcImg || !mask || totalW === 0 || totalH === 0) return;
 
@@ -440,6 +456,9 @@ export const App: React.FC = () => {
     link.download = `asset_${halftone.mode}_${exportScale}x.png`;
     link.href = finalCanvas.toDataURL('image/png');
     link.click();
+
+    const t1 = performance.now();
+    console.log(`[ImageToAsset Perf] High-res export (${exportScale}x) generated in ${(t1 - t0).toFixed(2)}ms (${expW}x${expH})`);
   };
 
   const handleResetZoom = () => {

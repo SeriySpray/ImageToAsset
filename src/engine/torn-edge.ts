@@ -333,11 +333,30 @@ export function renderTornPaperAsset(
   if (!settings.enabled) {
     // If torn edge is disabled, draw halftone clipped directly to mask
     if (maskCanvas instanceof HTMLCanvasElement) {
-      targetCtx.save();
-      targetCtx.drawImage(halftoneCanvas, 0, 0);
-      targetCtx.globalCompositeOperation = 'destination-in';
-      targetCtx.drawImage(maskCanvas, 0, 0);
-      targetCtx.restore();
+      const clippedCanvas = document.createElement('canvas');
+      clippedCanvas.width = width;
+      clippedCanvas.height = height;
+      const clipCtx = clippedCanvas.getContext('2d');
+      if (clipCtx) {
+        clipCtx.drawImage(halftoneCanvas, 0, 0);
+        clipCtx.globalCompositeOperation = 'destination-in';
+        clipCtx.drawImage(maskCanvas, 0, 0);
+
+        if (settings.dropShadow && (settings.shadowBlur ?? 18) > 0) {
+          const blur = settings.shadowBlur ?? 18;
+          const opacity = settings.shadowOpacity ?? 0.35;
+          const offsetY = Math.max(2, Math.round(blur * 0.35));
+          targetCtx.save();
+          targetCtx.shadowColor = `rgba(0, 0, 0, ${opacity})`;
+          targetCtx.shadowBlur = blur;
+          targetCtx.shadowOffsetX = 0;
+          targetCtx.shadowOffsetY = offsetY;
+          targetCtx.drawImage(clippedCanvas, 0, 0);
+          targetCtx.restore();
+        }
+
+        targetCtx.drawImage(clippedCanvas, 0, 0);
+      }
     }
     return;
   }
@@ -351,13 +370,16 @@ export function renderTornPaperAsset(
     }
   }
 
-  // 2. Render drop shadow if requested
-  if (settings.dropShadow) {
+  // 2. Render realistic volumetric drop shadow if requested
+  if (settings.dropShadow && (settings.shadowBlur ?? 18) > 0) {
+    const blur = settings.shadowBlur ?? 18;
+    const opacity = settings.shadowOpacity ?? 0.35;
+    const offsetY = Math.max(2, Math.round(blur * 0.35));
     targetCtx.save();
-    targetCtx.shadowColor = `rgba(0, 0, 0, ${settings.shadowOpacity || 0.35})`;
-    targetCtx.shadowBlur = settings.shadowBlur || 18;
+    targetCtx.shadowColor = `rgba(0, 0, 0, ${opacity})`;
+    targetCtx.shadowBlur = blur;
     targetCtx.shadowOffsetX = 0;
-    targetCtx.shadowOffsetY = 8;
+    targetCtx.shadowOffsetY = offsetY;
     targetCtx.drawImage(paperCanvas, 0, 0);
     targetCtx.restore();
   }

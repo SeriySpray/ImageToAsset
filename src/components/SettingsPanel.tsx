@@ -255,6 +255,50 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 />
               </button>
             </div>
+
+            {/* Volumetric Drop Shadow Toggle & Size Slider */}
+            <div className="pt-2 border-t border-[#1e1e1e] space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-neutral-300 font-medium block">
+                    Об'ємна тінь наклейки
+                  </span>
+                  <span className="text-[10px] text-neutral-500 block">
+                    М'яка 3D тінь для глибини
+                  </span>
+                </div>
+                <button
+                  onClick={() => onChangeTornEdge({ dropShadow: !tornEdge.dropShadow })}
+                  className={`w-8 h-4 rounded-full transition relative p-0.5 cursor-pointer ${
+                    tornEdge.dropShadow ? 'bg-white' : 'bg-[#262626]'
+                  }`}
+                  title="Увімкнути/вимкнути об'ємну тінь наклейки"
+                >
+                  <div
+                    className={`w-3 h-3 rounded-full transition transform ${
+                      tornEdge.dropShadow ? 'bg-black translate-x-4' : 'bg-neutral-400 translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {tornEdge.dropShadow && (
+                <div>
+                  <div className="flex justify-between text-[11px] mb-1.5">
+                    <span className="text-neutral-400 font-medium">Розмір / розмиття тіні</span>
+                    <span className="font-mono text-white font-bold">{tornEdge.shadowBlur || 18}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="4"
+                    max="48"
+                    value={tornEdge.shadowBlur || 18}
+                    onChange={(e) => onChangeTornEdge({ shadowBlur: Number(e.target.value) })}
+                    className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -1,8 +1,23 @@
 import { TornEdgeSettings } from '../types';
 import { FastNoise } from './noise';
 
+// Reusable static buffers for distance transform to avoid GC allocations
+let sharedF: Float32Array | null = null;
+let sharedD: Float32Array | null = null;
+let sharedV: Int32Array | null = null;
+let sharedZ: Float32Array | null = null;
+
+function ensureBuffers(maxDim: number) {
+  if (!sharedF || sharedF.length < maxDim) {
+    sharedF = new Float32Array(maxDim);
+    sharedD = new Float32Array(maxDim);
+    sharedV = new Int32Array(maxDim);
+    sharedZ = new Float32Array(maxDim + 1);
+  }
+}
+
 /**
- * Computes exact Euclidean Distance Transform (8SED / Felzenszwalb-Huttenlocher) in O(N) time
+ * High-performance Euclidean Distance Transform (8SED / Felzenszwalb-Huttenlocher) in O(N) time
  */
 export function computeDistanceTransform(
   mask: Uint8ClampedArray,
@@ -18,11 +33,13 @@ export function computeDistanceTransform(
     dist[i] = mask[i] >= 128 ? 0 : INF;
   }
 
-  // 1D squared distance transform helper
-  const f = new Float32Array(Math.max(width, height));
-  const d = new Float32Array(Math.max(width, height));
-  const v = new Int32Array(Math.max(width, height));
-  const z = new Float32Array(Math.max(width, height) + 1);
+  const maxDim = Math.max(width, height);
+  ensureBuffers(maxDim);
+
+  const f = sharedF!;
+  const d = sharedD!;
+  const v = sharedV!;
+  const z = sharedZ!;
 
   // Transform along columns
   for (let x = 0; x < width; x++) {
@@ -91,7 +108,6 @@ export function computeDistanceTransform(
     }
 
     for (let x = 0; x < width; x++) {
-      // Store actual Euclidean distance (sqrt)
       dist[rowOffset + x] = Math.sqrt(d[x]);
     }
   }
@@ -102,7 +118,7 @@ export function computeDistanceTransform(
 const noiseGenerator = new FastNoise(4242);
 
 /**
- * Composite Halftone artwork with the realistic torn paper / sticker contour
+ * Optimized Torn Paper sticker edge generator and composite renderer
  */
 export function renderTornPaperAsset(
   halftoneCanvas: HTMLCanvasElement,
@@ -115,7 +131,7 @@ export function renderTornPaperAsset(
   targetCtx.clearRect(0, 0, width, height);
 
   if (!settings.enabled) {
-    // If torn edge disabled, just draw halftone clipped to mask
+    // If torn edge is disabled, draw halftone clipped directly to mask
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = width;
     tempCanvas.height = height;
@@ -128,7 +144,7 @@ export function renderTornPaperAsset(
 
     for (let i = 0; i < width * height; i++) {
       if (maskData[i] < 128) {
-        pixels[i * 4 + 3] = 0; // transparent
+        pixels[i * 4 + 3] = 0;
       }
     }
     tempCtx.putImageData(imgData, 0, 0);
@@ -139,7 +155,7 @@ export function renderTornPaperAsset(
   // 1. Calculate distance transform from selection mask
   const distField = computeDistanceTransform(maskData, width, height);
 
-  // 2. Generate paper sticker mask using fractal torn noise
+  // 2. Generate paper sticker backing
   const paperCanvas = document.createElement('canvas');
   paperCanvas.width = width;
   paperCanvas.height = height;
@@ -156,37 +172,58 @@ export function renderTornPaperAsset(
   const pb = parseInt(hex.substring(4, 6), 16) || 255;
 
   const { padding, roughness, frequency, octaves, paperTexture } = settings;
+  const maxPossiblePadding = padding + roughness * 1.6;
 
-  // Create paper backing with jagged torn deckle edges
+  // Render paper backing with fast boundary noise evaluation
   for (let y = 0; y < height; y++) {
+    const rowOffset = y * width;
     for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
+      const idx = rowOffset + x;
       const pixelIdx = idx * 4;
       const dist = distField[idx];
 
-      // Multi-frequency noise for authentic torn paper fibers
+      // Fast path: Far outside sticker
+      if (dist > maxPossiblePadding) {
+        paperPixels[pixelIdx + 3] = 0;
+        continue;
+      }
+
+      // Fast path: Inside mask core
+      if (dist === 0) {
+        let r = pr;
+        let g = pg;
+        let b = pb;
+        if (paperTexture) {
+          const grain = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453 % 1) * 6 - 3;
+          r = Math.max(0, Math.min(255, r + grain));
+          g = Math.max(0, Math.min(255, g + grain));
+          b = Math.max(0, Math.min(255, b + grain));
+        }
+        paperPixels[pixelIdx] = r;
+        paperPixels[pixelIdx + 1] = g;
+        paperPixels[pixelIdx + 2] = b;
+        paperPixels[pixelIdx + 3] = 255;
+        continue;
+      }
+
+      // Boundary region: Evaluate fractal torn paper edge noise
       const n1 = noiseGenerator.fbm2D(x * frequency, y * frequency, octaves);
       const n2 = noiseGenerator.noise2D(x * frequency * 4, y * frequency * 4) * 0.25;
-      const n3 = noiseGenerator.noise2D(x * frequency * 12, y * frequency * 12) * 0.1;
-      const tornNoise = (n1 + n2 + n3) * roughness;
-
+      const tornNoise = (n1 + n2) * roughness;
       const effectivePadding = Math.max(2, padding + tornNoise);
 
       if (dist <= effectivePadding) {
-        // Pixel is inside the torn paper boundary
         let r = pr;
         let g = pg;
         let b = pb;
 
         if (paperTexture) {
-          // Subtle paper grain & fibers
-          const grain = (noiseGenerator.noise2D(x * 0.35, y * 0.35) * 6) + (Math.random() * 4 - 2);
-          r = Math.max(0, Math.min(255, r - grain));
-          g = Math.max(0, Math.min(255, g - grain));
-          b = Math.max(0, Math.min(255, b - grain));
+          const grain = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453 % 1) * 6 - 3;
+          r = Math.max(0, Math.min(255, r + grain));
+          g = Math.max(0, Math.min(255, g + grain));
+          b = Math.max(0, Math.min(255, b + grain));
         }
 
-        // Soft anti-aliased edge at the very border
         const edgeDist = effectivePadding - dist;
         let alpha = 255;
         if (edgeDist < 1.2) {
@@ -198,7 +235,6 @@ export function renderTornPaperAsset(
         paperPixels[pixelIdx + 2] = b;
         paperPixels[pixelIdx + 3] = alpha;
       } else {
-        // Outside the torn paper -> transparent
         paperPixels[pixelIdx + 3] = 0;
       }
     }
@@ -220,7 +256,7 @@ export function renderTornPaperAsset(
   // 4. Draw paper base
   targetCtx.drawImage(paperCanvas, 0, 0);
 
-  // 5. Draw halftone artwork clipped strictly inside the object mask + slight soft blending
+  // 5. Draw halftone artwork clipped strictly inside object mask
   const clippedArtCanvas = document.createElement('canvas');
   clippedArtCanvas.width = width;
   clippedArtCanvas.height = height;
@@ -241,6 +277,6 @@ export function renderTornPaperAsset(
   }
   clippedArtCtx.putImageData(artImgData, 0, 0);
 
-  // Composite halftone artwork onto the white paper backing
+  // Composite halftone onto paper
   targetCtx.drawImage(clippedArtCanvas, 0, 0);
 }

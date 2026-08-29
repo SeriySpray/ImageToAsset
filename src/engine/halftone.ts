@@ -36,7 +36,6 @@ export function adjustLuminance(
 export function renderHalftone(
   sourceCtx: CanvasRenderingContext2D,
   targetCtx: CanvasRenderingContext2D,
-  maskData: Uint8ClampedArray | null,
   width: number,
   height: number,
   settings: HalftoneSettings
@@ -92,11 +91,6 @@ export function renderHalftone(
     const iy = Math.floor(Math.max(0, Math.min(height - 1, py)));
     const idx = (iy * width + ix) * 4;
 
-    // Check mask if present
-    if (maskData && maskData[iy * width + ix] < 10) {
-      return 1.0; // treat unmasked as pure white (no ink)
-    }
-
     const r = srcPixels[idx];
     const g = srcPixels[idx + 1];
     const b = srcPixels[idx + 2];
@@ -136,13 +130,6 @@ export function renderHalftone(
         const y = gx * sin + gy * cos;
 
         if (x < -gridStep || x > width + gridStep || y < -gridStep || y > height + gridStep) {
-          continue;
-        }
-
-        // Check if inside image mask bounds
-        const ix = Math.floor(x);
-        const iy = Math.floor(y);
-        if (maskData && (ix < 0 || ix >= width || iy < 0 || iy >= height || maskData[iy * width + ix] < 10)) {
           continue;
         }
 
@@ -189,13 +176,6 @@ export function renderHalftone(
           continue;
         }
 
-        const ix = Math.floor(x);
-        const iy = Math.floor(y);
-        if (maskData && maskData[iy * width + ix] < 10) {
-          isDrawing = false;
-          continue;
-        }
-
         const lum = getPixelLum(x, y);
         const darkness = 1 - lum;
 
@@ -228,13 +208,6 @@ export function renderHalftone(
           const y2 = gx2 * sin2 + gy * cos2;
 
           if (x2 < 0 || x2 >= width || y2 < 0 || y2 >= height) {
-            isDrawing = false;
-            continue;
-          }
-
-          const ix = Math.floor(x2);
-          const iy = Math.floor(y2);
-          if (maskData && maskData[iy * width + ix] < 10) {
             isDrawing = false;
             continue;
           }
@@ -272,17 +245,6 @@ export function renderHalftone(
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
-        const isMasked = maskData ? maskData[idx] >= 10 : true;
-
-        if (!isMasked) {
-          // Transparent / white
-          outData[idx * 4] = 255;
-          outData[idx * 4 + 1] = 255;
-          outData[idx * 4 + 2] = 255;
-          outData[idx * 4 + 3] = 255;
-          continue;
-        }
-
         const oldVal = ditherBuffer[idx];
         const newVal = oldVal < 0.5 ? 0 : 1;
         const err = (oldVal - newVal) / 8;

@@ -2,14 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ToolType, Point, HalftoneSettings, TornEdgeSettings } from '../types';
 import { renderHalftone } from '../engine/halftone';
 import { renderTornPaperAsset } from '../engine/torn-edge';
-import {
-  applyBrush,
-  applyBrushStroke,
-  fillPolygonMask,
-  setBoxMask,
-  magicWandSelect,
-  smartAutoCutout,
-} from '../engine/segmentation';
+import { magicWandSelect, smartAutoCutout } from '../engine/segmentation';
 
 interface CanvasViewportProps {
   image: HTMLImageElement | null;
@@ -50,22 +43,24 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sourceCanvasRef = useRef<HTMLCanvasElement>(null);
-  const halftoneCanvasRef = useRef<HTMLCanvasElement>(null);
+  const halftoneCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Interaction states
   const [isInteracting, setIsInteracting] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
-  const [lastPoint, setLastPoint] = useState<Point | null>(null);
-  const [dragStart, setDragStart] = useState<Point | null>(null);
+  const lastPointRef = useRef<Point | null>(null);
+  const dragStartRef = useRef<Point | null>(null);
+
   const [boxSelection, setBoxSelection] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [polygonPoints, setPolygonPoints] = useState<Point[]>([]);
   const [freehandPoints, setFreehandPoints] = useState<Point[]>([]);
   const [mousePos, setMousePos] = useState<Point | null>(null);
-  const [splitPosition, setSplitPosition] = useState<number>(0.5); // 0..1
+  const [splitPosition, setSplitPosition] = useState<number>(0.5);
 
-  // Handle global Space key for quick panning
+  // Space key for panning
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !e.repeat && document.activeElement?.tagName !== 'INPUT') {
@@ -85,27 +80,87 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     };
   }, []);
 
-  // Update Source Canvas whenever image changes
+  // Helper to commit offscreen maskCanvas to Uint8ClampedArray mask state
+  const commitMaskCanvas = useCallback(() => {
+    if (!maskCanvasRef.current || !image) return;
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
+    if (!maskCtx) return;
+
+    const imgData = maskCtx.getImageData(0, 0, width, height);
+    const pixels = imgData.data;
+    const newMask = new Uint8ClampedArray(width * height);
+
+    for (let i = 0; i < width * height; i++) {
+      newMask[i] = pixels[i * 4 + 3];
+    }
+
+    onUpdateMask(newMask);
+  }, [image, onUpdateMask]);
+
+  // Global Mouse Up Listener to ensure strokes commit even when releasing outside canvas
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isInteracting) {
+        setIsInteracting(false);
+        dragStartRef.current = null;
+        lastPointRef.current = null;
+        commitMaskCanvas();
+      }
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [isInteracting, commitMaskCanvas]);
+
+  // Sync Source Image to Source Canvas
   useEffect(() => {
     if (!image || !sourceCanvasRef.current) return;
     const srcCanvas = sourceCanvasRef.current;
     srcCanvas.width = image.naturalWidth || image.width;
     srcCanvas.height = image.naturalHeight || image.height;
-    const ctx = srcCanvas.getContext('2d');
+    const ctx = srcCanvas.getContext('2d', { willReadFrequently: true });
     if (ctx) {
       ctx.clearRect(0, 0, srcCanvas.width, srcCanvas.height);
       ctx.drawImage(image, 0, 0);
     }
   }, [image]);
 
-  // Main Graphics Render Pipeline
+  // Sync Mask to Offscreen Mask Canvas
   useEffect(() => {
-    if (!image || !mask || !sourceCanvasRef.current || !displayCanvasRef.current) return;
-
+    if (!image || !mask) return;
     const width = image.naturalWidth || image.width;
     const height = image.naturalHeight || image.height;
 
-    // 1. Prepare offscreen canvases
+    if (!maskCanvasRef.current) {
+      maskCanvasRef.current = document.createElement('canvas');
+    }
+    const maskCanvas = maskCanvasRef.current;
+    maskCanvas.width = width;
+    maskCanvas.height = height;
+    const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+    if (!maskCtx) return;
+
+    const imgData = maskCtx.createImageData(width, height);
+    const pixels = imgData.data;
+
+    for (let i = 0; i < width * height; i++) {
+      const v = mask[i];
+      const idx = i * 4;
+      pixels[idx] = 255;
+      pixels[idx + 1] = 255;
+      pixels[idx + 2] = 255;
+      pixels[idx + 3] = v;
+    }
+    maskCtx.putImageData(imgData, 0, 0);
+  }, [image, mask]);
+
+  // 1. Pre-render Halftone Texture (ONLY runs when image or halftone parameters change!)
+  useEffect(() => {
+    if (!image || !sourceCanvasRef.current) return;
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+
     if (!halftoneCanvasRef.current) {
       halftoneCanvasRef.current = document.createElement('canvas');
     }
@@ -113,22 +168,28 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     htCanvas.width = width;
     htCanvas.height = height;
     const htCtx = htCanvas.getContext('2d', { willReadFrequently: true });
-
     const srcCtx = sourceCanvasRef.current.getContext('2d', { willReadFrequently: true });
+
+    if (!htCtx || !srcCtx) return;
+
+    renderHalftone(srcCtx, htCtx, width, height, halftone);
+    renderFullComposite();
+  }, [image, halftone]);
+
+  // 2. Render Full Composite with Torn Paper Edge
+  const renderFullComposite = useCallback(() => {
+    if (!image || !mask || !halftoneCanvasRef.current || !displayCanvasRef.current) return;
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+
     const dispCanvas = displayCanvasRef.current;
     dispCanvas.width = width;
     dispCanvas.height = height;
     const dispCtx = dispCanvas.getContext('2d');
+    if (!dispCtx) return;
 
-    if (!htCtx || !srcCtx || !dispCtx) return;
+    renderTornPaperAsset(halftoneCanvasRef.current, dispCtx, mask, width, height, tornEdge);
 
-    // 2. Render Halftone artwork
-    renderHalftone(srcCtx, htCtx, mask, width, height, halftone);
-
-    // 3. Render Torn Paper Sticker Border & Composite
-    renderTornPaperAsset(htCanvas, dispCtx, mask, width, height, tornEdge);
-
-    // 4. Update rendered ref for export / clipboard
     if (renderedCanvasRef.current) {
       renderedCanvasRef.current.width = width;
       renderedCanvasRef.current.height = height;
@@ -138,101 +199,30 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         refCtx.drawImage(dispCanvas, 0, 0);
       }
     }
-  }, [image, mask, halftone, tornEdge, renderedCanvasRef]);
+  }, [image, mask, tornEdge, renderedCanvasRef]);
 
-  // Render Selection Overlay (Mask & Active Drawing Paths)
+  // Trigger composite when torn edge settings or mask state update
   useEffect(() => {
-    if (!image || !mask || !overlayCanvasRef.current) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-    const canvas = overlayCanvasRef.current;
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, width, height);
-
-    // Only draw mask tint while actively painting/erasing with brush
-    const isDrawingMask = isInteracting && (activeTool === 'brush' || activeTool === 'eraser');
-
-    if (isDrawingMask) {
-      const imgData = ctx.createImageData(width, height);
-      const pixels = imgData.data;
-
-      // Soft semi-transparent indigo tint for masked/selected area
-      for (let i = 0; i < width * height; i++) {
-        const m = mask[i];
-        if (m > 10) {
-          const idx = i * 4;
-          pixels[idx] = 99;      // R (indigo)
-          pixels[idx + 1] = 102;  // G
-          pixels[idx + 2] = 241;  // B
-          pixels[idx + 3] = Math.min(80, Math.floor(m * 0.3)); // alpha
-        }
-      }
-      ctx.putImageData(imgData, 0, 0);
+    if (!isInteracting) {
+      renderFullComposite();
     }
+  }, [mask, tornEdge, renderFullComposite, isInteracting]);
 
-    // Draw active box select
-    if (boxSelection && activeTool === 'box-select') {
-      const minX = Math.min(boxSelection.x0, boxSelection.x1);
-      const minY = Math.min(boxSelection.y0, boxSelection.y1);
-      const w = Math.abs(boxSelection.x1 - boxSelection.x0);
-      const h = Math.abs(boxSelection.y1 - boxSelection.y0);
+  // Fast 60-FPS Live Preview during Active Brush/Eraser Stroke
+  const renderLiveStrokePreview = useCallback(() => {
+    if (!displayCanvasRef.current || !halftoneCanvasRef.current || !maskCanvasRef.current) return;
+    const dispCtx = displayCanvasRef.current.getContext('2d');
+    if (!dispCtx) return;
 
-      ctx.save();
-      ctx.strokeStyle = '#6366f1';
-      ctx.lineWidth = 2 / scale;
-      ctx.setLineDash([4 / scale, 4 / scale]);
-      ctx.strokeRect(minX, minY, w, h);
-      ctx.fillStyle = 'rgba(99, 102, 241, 0.15)';
-      ctx.fillRect(minX, minY, w, h);
-      ctx.restore();
-    }
+    const width = displayCanvasRef.current.width;
+    const height = displayCanvasRef.current.height;
 
-    // Draw polygon nodes and path
-    if (polygonPoints.length > 0) {
-      ctx.save();
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2 / scale;
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
-      ctx.beginPath();
-      ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
-      for (let i = 1; i < polygonPoints.length; i++) {
-        ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
-      }
-      if (mousePos) {
-        ctx.lineTo(mousePos.x, mousePos.y);
-      }
-      ctx.stroke();
-
-      // Nodes
-      for (const p of polygonPoints) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 4 / scale, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-        ctx.strokeStyle = '#38bdf8';
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    // Draw freehand lasso path
-    if (freehandPoints.length > 1) {
-      ctx.save();
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2 / scale;
-      ctx.beginPath();
-      ctx.moveTo(freehandPoints[0].x, freehandPoints[0].y);
-      for (let i = 1; i < freehandPoints.length; i++) {
-        ctx.lineTo(freehandPoints[i].x, freehandPoints[i].y);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-  }, [image, mask, activeTool, isSpacePressed, boxSelection, polygonPoints, freehandPoints, mousePos, scale]);
+    dispCtx.clearRect(0, 0, width, height);
+    dispCtx.drawImage(halftoneCanvasRef.current, 0, 0);
+    dispCtx.globalCompositeOperation = 'destination-in';
+    dispCtx.drawImage(maskCanvasRef.current, 0, 0);
+    dispCtx.globalCompositeOperation = 'source-over';
+  }, []);
 
   // Convert screen mouse coordinates to image pixel coordinates
   const screenToImage = useCallback(
@@ -245,7 +235,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       const imgWidth = image.naturalWidth || image.width;
       const imgHeight = image.naturalHeight || image.height;
 
-      // Center offset
       const viewCenterX = rect.width / 2 + pan.x;
       const viewCenterY = rect.height / 2 + pan.y;
 
@@ -270,63 +259,113 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
   // Mouse Down
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!image || !mask) return;
+    if (!image || !maskCanvasRef.current) return;
 
-    // Pan with Middle Click or Space Key or Pan Tool
+    // Pan with Middle Click, Space Key, or Pan Tool
     if (e.button === 1 || isSpacePressed || activeTool === 'pan') {
       setIsInteracting(true);
-      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      dragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
       return;
     }
 
-    if (e.button !== 0) return; // Only Left Click for tools
+    if (e.button !== 0) return;
 
     const pt = screenToImage(e.clientX, e.clientY);
     if (!pt) return;
 
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-
     setIsInteracting(true);
-    setLastPoint(pt);
+    lastPointRef.current = pt;
+
+    const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
+    if (!maskCtx) return;
 
     if (activeTool === 'brush' || activeTool === 'eraser') {
-      const newMask = new Uint8ClampedArray(mask);
-      applyBrush(newMask, width, height, pt.x, pt.y, brushSize, activeTool === 'eraser');
-      onUpdateMask(newMask);
+      maskCtx.lineCap = 'round';
+      maskCtx.lineJoin = 'round';
+      maskCtx.lineWidth = brushSize * 2;
+
+      if (activeTool === 'eraser') {
+        maskCtx.globalCompositeOperation = 'destination-out';
+      } else {
+        maskCtx.globalCompositeOperation = 'source-over';
+        maskCtx.fillStyle = '#ffffff';
+        maskCtx.strokeStyle = '#ffffff';
+      }
+
+      maskCtx.beginPath();
+      maskCtx.arc(pt.x, pt.y, brushSize, 0, Math.PI * 2);
+      maskCtx.fill();
+
+      renderLiveStrokePreview();
     } else if (activeTool === 'box-select' || activeTool === 'auto-cutout') {
       setBoxSelection({ x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y });
     } else if (activeTool === 'lasso') {
       setFreehandPoints([pt]);
     } else if (activeTool === 'polygon') {
-      // If clicking near first point, close polygon
       if (polygonPoints.length >= 3) {
         const first = polygonPoints[0];
         const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
         if (dist < 12 / scale) {
-          const newMask = new Uint8ClampedArray(mask);
-          fillPolygonMask(newMask, width, height, polygonPoints, 255);
-          onUpdateMask(newMask);
+          // Close polygon
+          maskCtx.globalCompositeOperation = e.altKey ? 'destination-out' : 'source-over';
+          maskCtx.fillStyle = '#ffffff';
+          maskCtx.beginPath();
+          maskCtx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+          for (let i = 1; i < polygonPoints.length; i++) {
+            maskCtx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+          }
+          maskCtx.closePath();
+          maskCtx.fill();
+
           setPolygonPoints([]);
           setIsInteracting(false);
+          commitMaskCanvas();
           return;
         }
       }
       setPolygonPoints((prev) => [...prev, pt]);
     } else if (activeTool === 'magic-wand' && sourceCanvasRef.current) {
-      const newMask = new Uint8ClampedArray(mask);
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      const tempMask = new Uint8ClampedArray(width * height);
+
       magicWandSelect(
         sourceCanvasRef.current.getContext('2d')!,
-        newMask,
+        tempMask,
         width,
         height,
         pt.x,
         pt.y,
         wandTolerance,
         true,
-        e.shiftKey ? 'add' : e.altKey ? 'subtract' : 'replace'
+        'replace'
       );
-      onUpdateMask(newMask);
+
+      const wandCanvas = document.createElement('canvas');
+      wandCanvas.width = width;
+      wandCanvas.height = height;
+      const wandCtx = wandCanvas.getContext('2d');
+      if (wandCtx) {
+        const imgD = wandCtx.createImageData(width, height);
+        for (let i = 0; i < width * height; i++) {
+          if (tempMask[i] > 0) {
+            imgD.data[i * 4] = 255;
+            imgD.data[i * 4 + 1] = 255;
+            imgD.data[i * 4 + 2] = 255;
+            imgD.data[i * 4 + 3] = 255;
+          }
+        }
+        wandCtx.putImageData(imgD, 0, 0);
+
+        if (e.altKey) {
+          maskCtx.globalCompositeOperation = 'destination-out';
+        } else {
+          maskCtx.globalCompositeOperation = 'source-over';
+        }
+        maskCtx.drawImage(wandCanvas, 0, 0);
+      }
+
+      commitMaskCanvas();
       setIsInteracting(false);
     }
   };
@@ -338,24 +377,40 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
     if (!isInteracting) return;
 
-    // Panning
-    if (dragStart && (isSpacePressed || activeTool === 'pan' || e.buttons === 4)) {
+    // Pan viewport
+    if (dragStartRef.current && (isSpacePressed || activeTool === 'pan' || e.buttons === 4)) {
       onUpdateView(scale, {
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
+        x: e.clientX - dragStartRef.current.x,
+        y: e.clientY - dragStartRef.current.y,
       });
       return;
     }
 
-    if (!image || !mask || !pt) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
+    if (!image || !maskCanvasRef.current || !pt) return;
 
-    if ((activeTool === 'brush' || activeTool === 'eraser') && lastPoint) {
-      const newMask = new Uint8ClampedArray(mask);
-      applyBrushStroke(newMask, width, height, lastPoint, pt, brushSize, activeTool === 'eraser');
-      onUpdateMask(newMask);
-      setLastPoint(pt);
+    if ((activeTool === 'brush' || activeTool === 'eraser') && lastPointRef.current) {
+      const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
+      if (!maskCtx) return;
+
+      maskCtx.lineCap = 'round';
+      maskCtx.lineJoin = 'round';
+      maskCtx.lineWidth = brushSize * 2;
+
+      if (activeTool === 'eraser') {
+        maskCtx.globalCompositeOperation = 'destination-out';
+      } else {
+        maskCtx.globalCompositeOperation = 'source-over';
+        maskCtx.fillStyle = '#ffffff';
+        maskCtx.strokeStyle = '#ffffff';
+      }
+
+      maskCtx.beginPath();
+      maskCtx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+      maskCtx.lineTo(pt.x, pt.y);
+      maskCtx.stroke();
+
+      lastPointRef.current = pt;
+      renderLiveStrokePreview();
     } else if (activeTool === 'box-select' || activeTool === 'auto-cutout') {
       if (boxSelection) {
         setBoxSelection({ ...boxSelection, x1: pt.x, y1: pt.y });
@@ -366,41 +421,174 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   };
 
   // Mouse Up
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent) => {
     if (!isInteracting) return;
     setIsInteracting(false);
-    setDragStart(null);
-    setLastPoint(null);
+    dragStartRef.current = null;
+    lastPointRef.current = null;
 
-    if (!image || !mask) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
+    if (!image || !maskCanvasRef.current) return;
+    const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
+    if (!maskCtx) return;
 
-    if (activeTool === 'box-select' && boxSelection) {
-      const newMask = new Uint8ClampedArray(mask);
-      setBoxMask(newMask, width, height, boxSelection, 255);
-      onUpdateMask(newMask);
+    if (activeTool === 'brush' || activeTool === 'eraser') {
+      commitMaskCanvas();
+    } else if (activeTool === 'box-select' && boxSelection) {
+      const minX = Math.min(boxSelection.x0, boxSelection.x1);
+      const minY = Math.min(boxSelection.y0, boxSelection.y1);
+      const w = Math.abs(boxSelection.x1 - boxSelection.x0);
+      const h = Math.abs(boxSelection.y1 - boxSelection.y0);
+
+      maskCtx.globalCompositeOperation = e.altKey ? 'destination-out' : 'source-over';
+      maskCtx.fillStyle = '#ffffff';
+      maskCtx.fillRect(minX, minY, w, h);
+
       setBoxSelection(null);
+      commitMaskCanvas();
     } else if (activeTool === 'auto-cutout' && boxSelection && sourceCanvasRef.current) {
-      const newMask = new Uint8ClampedArray(mask);
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      const autoMask = new Uint8ClampedArray(width * height);
+
       smartAutoCutout(
         sourceCanvasRef.current.getContext('2d')!,
-        newMask,
+        autoMask,
         width,
         height,
         boxSelection
       );
-      onUpdateMask(newMask);
+
+      const autoCanvas = document.createElement('canvas');
+      autoCanvas.width = width;
+      autoCanvas.height = height;
+      const autoCtx = autoCanvas.getContext('2d');
+      if (autoCtx) {
+        const imgD = autoCtx.createImageData(width, height);
+        for (let i = 0; i < width * height; i++) {
+          if (autoMask[i] > 0) {
+            imgD.data[i * 4] = 255;
+            imgD.data[i * 4 + 1] = 255;
+            imgD.data[i * 4 + 2] = 255;
+            imgD.data[i * 4 + 3] = 255;
+          }
+        }
+        autoCtx.putImageData(imgD, 0, 0);
+
+        maskCtx.globalCompositeOperation = 'source-over';
+        maskCtx.drawImage(autoCanvas, 0, 0);
+      }
+
       setBoxSelection(null);
+      commitMaskCanvas();
     } else if (activeTool === 'lasso' && freehandPoints.length > 2) {
-      const newMask = new Uint8ClampedArray(mask);
-      fillPolygonMask(newMask, width, height, freehandPoints, 255);
-      onUpdateMask(newMask);
+      maskCtx.globalCompositeOperation = e.altKey ? 'destination-out' : 'source-over';
+      maskCtx.fillStyle = '#ffffff';
+      maskCtx.beginPath();
+      maskCtx.moveTo(freehandPoints[0].x, freehandPoints[0].y);
+      for (let i = 1; i < freehandPoints.length; i++) {
+        maskCtx.lineTo(freehandPoints[i].x, freehandPoints[i].y);
+      }
+      maskCtx.closePath();
+      maskCtx.fill();
+
       setFreehandPoints([]);
+      commitMaskCanvas();
     }
   };
 
-  // Drag and Drop files
+  // Render Vector Selection Overlay (Box selection, Lasso paths, Polygon nodes)
+  useEffect(() => {
+    if (!image || !overlayCanvasRef.current) return;
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    const canvas = overlayCanvasRef.current;
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Draw active box select
+    if (boxSelection && (activeTool === 'box-select' || activeTool === 'auto-cutout')) {
+      const minX = Math.min(boxSelection.x0, boxSelection.x1);
+      const minY = Math.min(boxSelection.y0, boxSelection.y1);
+      const w = Math.abs(boxSelection.x1 - boxSelection.x0);
+      const h = Math.abs(boxSelection.y1 - boxSelection.y0);
+
+      ctx.save();
+      ctx.strokeStyle = activeTool === 'auto-cutout' ? '#f59e0b' : '#6366f1';
+      ctx.lineWidth = 2 / scale;
+      ctx.setLineDash([4 / scale, 4 / scale]);
+      ctx.strokeRect(minX, minY, w, h);
+      ctx.fillStyle = activeTool === 'auto-cutout' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(99, 102, 241, 0.12)';
+      ctx.fillRect(minX, minY, w, h);
+      ctx.restore();
+    }
+
+    // Draw polygon nodes and path
+    if (polygonPoints.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2 / scale;
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+      ctx.beginPath();
+      ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+      for (let i = 1; i < polygonPoints.length; i++) {
+        ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+      }
+      if (mousePos) {
+        ctx.lineTo(mousePos.x, mousePos.y);
+      }
+      ctx.stroke();
+
+      for (const p of polygonPoints) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4 / scale, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Draw freehand lasso path
+    if (freehandPoints.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2 / scale;
+      ctx.beginPath();
+      ctx.moveTo(freehandPoints[0].x, freehandPoints[0].y);
+      for (let i = 1; i < freehandPoints.length; i++) {
+        ctx.lineTo(freehandPoints[i].x, freehandPoints[i].y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, [image, boxSelection, polygonPoints, freehandPoints, mousePos, activeTool, scale]);
+
+  const handleDoubleClick = () => {
+    if (activeTool === 'polygon' && polygonPoints.length >= 3 && maskCanvasRef.current) {
+      const maskCtx = maskCanvasRef.current.getContext('2d');
+      if (maskCtx) {
+        maskCtx.globalCompositeOperation = 'source-over';
+        maskCtx.fillStyle = '#ffffff';
+        maskCtx.beginPath();
+        maskCtx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+        for (let i = 1; i < polygonPoints.length; i++) {
+          maskCtx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+        }
+        maskCtx.closePath();
+        maskCtx.fill();
+
+        setPolygonPoints([]);
+        setIsInteracting(false);
+        commitMaskCanvas();
+      }
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
@@ -412,20 +600,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
   };
 
-  // Double click to close polygon
-  const handleDoubleClick = () => {
-    if (activeTool === 'polygon' && polygonPoints.length >= 3 && image && mask) {
-      const width = image.naturalWidth || image.width;
-      const height = image.naturalHeight || image.height;
-      const newMask = new Uint8ClampedArray(mask);
-      fillPolygonMask(newMask, width, height, polygonPoints, 255);
-      onUpdateMask(newMask);
-      setPolygonPoints([]);
-      setIsInteracting(false);
-    }
-  };
-
-  // Get Canvas Background CSS class
   const getCanvasBgClass = () => {
     switch (canvasBg) {
       case 'dark-check':
@@ -470,17 +644,14 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
           }}
           className="relative shadow-2xl"
         >
-          {/* Split Screen Mode (Before / After Comparison) */}
+          {/* Split Screen Mode */}
           {showSplitView ? (
             <div className="relative overflow-hidden" style={{ width: image.naturalWidth, height: image.naturalHeight }}>
-              {/* Original Photo Background */}
               <img
                 src={image.src}
                 alt="Original"
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none"
               />
-
-              {/* Rendered Halftone Sticker Overlay with clip path */}
               <div
                 className="absolute inset-0 overflow-hidden"
                 style={{
@@ -489,8 +660,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
               >
                 <canvas ref={displayCanvasRef} className="w-full h-full" />
               </div>
-
-              {/* Split Line Divider */}
               <div
                 style={{ left: `${splitPosition * 100}%` }}
                 className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg pointer-events-none z-20 flex items-center justify-center"
@@ -501,22 +670,19 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
               </div>
             </div>
           ) : (
-            <>
-              {/* Normal Rendered Halftone Asset Canvas */}
-              <canvas
-                ref={displayCanvasRef}
-                className="block pointer-events-none"
-              />
-            </>
+            <canvas
+              ref={displayCanvasRef}
+              className="block pointer-events-none"
+            />
           )}
 
-          {/* Interactive Selection Overlay Canvas */}
+          {/* Interactive Selection Overlay */}
           <canvas
             ref={overlayCanvasRef}
             className="absolute inset-0 pointer-events-none z-10"
           />
 
-          {/* Brush Circle Cursor indicator */}
+          {/* High-Visibility Brush & Eraser Circle Cursor */}
           {mousePos && (activeTool === 'brush' || activeTool === 'eraser') && !isPanning && (
             <div
               style={{
@@ -525,16 +691,21 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
                 width: brushSize * 2,
                 height: brushSize * 2,
                 transform: 'translate(-50%, -50%)',
-                borderWidth: `${1.5 / scale}px`,
+                borderWidth: `${Math.max(1, 1.5 / scale)}px`,
               }}
-              className={`absolute rounded-full pointer-events-none border-dashed ${
-                activeTool === 'eraser' ? 'border-rose-400 bg-rose-500/10' : 'border-indigo-400 bg-indigo-500/10'
+              className={`absolute rounded-full pointer-events-none flex items-center justify-center shadow-sm ${
+                activeTool === 'eraser'
+                  ? 'border-rose-400 bg-rose-500/20 ring-1 ring-rose-500/40'
+                  : 'border-emerald-400 bg-emerald-500/20 ring-1 ring-emerald-500/40'
               }`}
-            />
+            >
+              {/* Crosshair indicator */}
+              <div className={`w-1.5 h-1.5 rounded-full ${activeTool === 'eraser' ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+            </div>
           )}
         </div>
       ) : (
-        /* Empty State Dropzone */
+        /* Empty State */
         <div className="flex flex-col items-center justify-center p-8 max-w-md text-center bg-[#151922]/90 border border-slate-800/80 rounded-3xl backdrop-blur-xl shadow-2xl">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600/20 to-sky-400/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4 shadow-inner">
             <svg
@@ -584,7 +755,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         </div>
       )}
 
-      {/* Floating Split Slider Control when split view active */}
+      {/* Floating Split Slider */}
       {showSplitView && image && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 border border-slate-800 backdrop-blur-md px-4 py-2 rounded-2xl flex items-center gap-3 shadow-2xl z-30">
           <span className="text-xs font-medium text-slate-300">До (Оригінал)</span>

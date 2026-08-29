@@ -290,7 +290,7 @@ export const App: React.FC = () => {
     const htCtx = htCanvas.getContext('2d', { willReadFrequently: true });
     if (!htCtx) return;
 
-    renderHalftone(srcCtx, htCtx, scaledMask, w, h, scaledHalftone);
+    renderHalftone(srcCtx, htCtx, w, h, scaledHalftone);
 
     const outCanvas = document.createElement('canvas');
     outCanvas.width = w;

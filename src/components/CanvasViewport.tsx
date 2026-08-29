@@ -93,7 +93,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     };
   }, []);
 
-  // Smooth Zoom with Ctrl/Wheel lock
+  // Smooth Centered Zoom with Ctrl/Wheel lock
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -109,11 +109,18 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       const currentScale = scaleRef.current;
       const currentPan = panRef.current;
 
-      const zoomFactor = e.deltaY < 0 ? 1.14 : 0.88;
+      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
       const newScale = Math.max(0.1, Math.min(16, currentScale * zoomFactor));
 
-      const newPanX = mouseScreenX - (mouseScreenX - currentPan.x) * (newScale / currentScale);
-      const newPanY = mouseScreenY - (mouseScreenY - currentPan.y) * (newScale / currentScale);
+      // Zoom centered directly into current scene / cursor position
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      const cursorOffsetX = mouseScreenX - centerX;
+      const cursorOffsetY = mouseScreenY - centerY;
+
+      const newPanX = cursorOffsetX - (cursorOffsetX - currentPan.x) * (newScale / currentScale);
+      const newPanY = cursorOffsetY - (cursorOffsetY - currentPan.y) * (newScale / currentScale);
 
       onUpdateView(newScale, { x: newPanX, y: newPanY });
     };
@@ -730,13 +737,13 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       {/* Main Interactive Stage */}
       {image && totalW > 0 && totalH > 0 && (
         <div
-          className="absolute origin-top-left transition-transform ease-out duration-75"
+          className="absolute origin-center transition-transform ease-out duration-75"
           style={{
             width: `${totalW}px`,
             height: `${totalH}px`,
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-            left: `calc(50% - ${(totalW * scale) / 2}px)`,
-            top: `calc(50% - ${(totalH * scale) / 2}px)`,
+            transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${scale})`,
+            left: '50%',
+            top: '50%',
           }}
         >
           {/* Display Rendered Canvas */}

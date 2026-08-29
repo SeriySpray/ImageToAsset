@@ -162,36 +162,59 @@ export function computeDistanceTransform(
 
 const noiseGenerator = new FastNoise(4242);
 
-// Precomputed 256x256 high-fidelity paper texture map (fibers + tooth grain + pulp flecks)
-const PAPER_TEXTURE_SIZE = 256;
+// Precomputed 512x512 crumpled / wrinkled paper texture map with crease folds and lighting relief
+const PAPER_TEXTURE_SIZE = 512;
 const paperTextureMap = new Int8Array(PAPER_TEXTURE_SIZE * PAPER_TEXTURE_SIZE);
 
 (() => {
-  // Deterministic PRNG for consistent, beautiful paper grain
-  let seed = 1337;
-  const rnd = () => {
-    seed = (seed * 1664525 + 1013904223) | 0;
-    return ((seed >>> 0) / 4294967296);
-  };
+  const size = PAPER_TEXTURE_SIZE;
+  const heightMap = new Float32Array(size * size);
+  const fastNoise = new FastNoise(8844);
 
-  for (let y = 0; y < PAPER_TEXTURE_SIZE; y++) {
-    for (let x = 0; x < PAPER_TEXTURE_SIZE; x++) {
-      // 1. High frequency micro-grain (paper tooth)
-      const microTooth = (rnd() - 0.5) * 12;
+  // 1. Generate multi-scale angular crease folds and crumpled paper ridges
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // Primary major paper creases (sharp V-folds)
+      const n1 = fastNoise.fastNoise2D(x * 0.55, y * 0.55);
+      const crease1 = 1.0 - Math.abs(n1);
 
-      // 2. Multi-directional organic paper fibers & pulp variation
-      const organicPulp = Math.sin(x * 0.15) * Math.cos(y * 0.15) * 5;
-      const diagonalFibers = Math.sin((x * 1.4 + y * 0.8) * 0.3) * 3.5;
-      const horizontalGrain = Math.sin(y * 0.6 + rnd() * 0.5) * 2.5;
+      // Secondary medium creases and wrinkles
+      const n2 = fastNoise.fastNoise2D(x * 1.25 + 150, y * 1.25 + 150);
+      const crease2 = (1.0 - Math.abs(n2)) * 0.55;
 
-      // 3. Subtle natural pulp flecks and inclusions
-      let pulpFleck = 0;
-      if (rnd() < 0.007) {
-        pulpFleck = (rnd() > 0.4 ? -1 : 1) * (9 + rnd() * 10);
-      }
+      // Fine micro-wrinkles
+      const n3 = fastNoise.fastNoise2D(x * 2.8 + 300, y * 2.8 + 300);
+      const crease3 = (1.0 - Math.abs(n3)) * 0.28;
 
-      const totalGrain = Math.round(microTooth + organicPulp + diagonalFibers + horizontalGrain + pulpFleck);
-      paperTextureMap[y * PAPER_TEXTURE_SIZE + x] = Math.max(-24, Math.min(24, totalGrain));
+      // Angular diagonal fold facets
+      const fold1 = Math.abs(Math.sin((x * 0.035 + y * 0.025) * Math.PI)) * 0.4;
+      const fold2 = Math.abs(Math.cos((x * 0.02 - y * 0.038) * Math.PI)) * 0.35;
+
+      heightMap[y * size + x] = crease1 * 1.2 + crease2 + crease3 + fold1 + fold2;
+    }
+  }
+
+  // 2. Compute normal vectors and directional lighting from top-left (-1, -1)
+  for (let y = 0; y < size; y++) {
+    const yPrev = (y - 1 + size) % size;
+    const yNext = (y + 1) % size;
+
+    for (let x = 0; x < size; x++) {
+      const xPrev = (x - 1 + size) % size;
+      const xNext = (x + 1) % size;
+
+      // Central difference gradient
+      const dx = heightMap[y * size + xNext] - heightMap[y * size + xPrev];
+      const dy = heightMap[yNext * size + x] - heightMap[yPrev * size + x];
+
+      // Diffuse relief shading with light source at top-left
+      const relief = (-dx * 0.707 - dy * 0.707) * 36;
+
+      // Subtle fine paper fiber grain
+      const grain = ((x * 17 + y * 31) % 7 - 3) * 0.6;
+
+      const totalVal = Math.round(relief + grain);
+      paperTextureMap[y * size + x] = Math.max(-28, Math.min(28, totalVal));
     }
   }
 })();
@@ -232,7 +255,7 @@ export function renderPaperBacking(
     const rowOffset = y * width;
     const gridY = isSubsampled ? y >> 1 : y;
     const gridRowOffset = gridY * gridW;
-    const textureYOffset = (y & 255) * PAPER_TEXTURE_SIZE;
+    const textureYOffset = (y & 511) * PAPER_TEXTURE_SIZE;
 
     for (let x = 0; x < width; x++) {
       const idx = rowOffset + x;
@@ -249,10 +272,10 @@ export function renderPaperBacking(
       // Fast path 2: Solid core of sticker (skip edge boundary math)
       if (dist <= innerCorePadding) {
         if (paperTexture) {
-          const grain = paperTextureMap[textureYOffset + (x & 255)];
+          const grain = paperTextureMap[textureYOffset + (x & 511)];
           const gr = Math.max(0, Math.min(255, pr + grain));
-          const gg = Math.max(0, Math.min(255, pg + Math.round(grain * 0.95)));
-          const gb = Math.max(0, Math.min(255, pb + Math.round(grain * 0.85)));
+          const gg = Math.max(0, Math.min(255, pg + Math.round(grain * 0.96)));
+          const gb = Math.max(0, Math.min(255, pb + Math.round(grain * 0.88)));
           pixels32[idx] = (255 << 24) | (gb << 16) | (gg << 8) | gr;
         } else {
           pixels32[idx] = (255 << 24) | (pb << 16) | (pg << 8) | pr;
@@ -271,10 +294,10 @@ export function renderPaperBacking(
         let gb = pb;
 
         if (paperTexture) {
-          const grain = paperTextureMap[textureYOffset + (x & 255)];
+          const grain = paperTextureMap[textureYOffset + (x & 511)];
           gr = Math.max(0, Math.min(255, pr + grain));
-          gg = Math.max(0, Math.min(255, pg + Math.round(grain * 0.95)));
-          gb = Math.max(0, Math.min(255, pb + Math.round(grain * 0.85)));
+          gg = Math.max(0, Math.min(255, pg + Math.round(grain * 0.96)));
+          gb = Math.max(0, Math.min(255, pb + Math.round(grain * 0.88)));
         }
 
         const edgeDist = effectivePadding - dist;

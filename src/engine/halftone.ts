@@ -110,12 +110,12 @@ export function renderHalftone(
 
     const S = Math.max(2, dotSize);
     const halfS = S * 0.5;
-    // Classic newspaper / newsprint halftone threshold geometry:
-    // Cell diagonal distance squared is 0.5 * S * S.
-    // Capping maxR2 to ~0.94 of cell diagonal (0.47 * S * S) preserves crisp micro-holes in deep blacks
-    // so solid black zones render as dense, tactile newspaper halftone dot fields rather than flat black blocks.
-    const maxR2 = (S * S * 0.5) * 0.94;
-    const marginDist = S * 2;
+    // The maximum radius is strictly bounded to 88% of halfS (radius = 0.44 * S, diameter = 0.88 * S).
+    // This ensures that adjacent dots in 100% black zones have a guaranteed clear gap (0.12 * S)
+    // and ALWAYS appear as distinct, crisp, separated round dots rather than merging into a solid black mass.
+    const maxRadius = halfS * 0.88;
+    const maxR2 = maxRadius * maxRadius;
+    const marginDist = Math.max(2, S * 0.8);
 
     for (let y = 0; y < height; y++) {
       const rowOffset = y * width;
@@ -131,8 +131,8 @@ export function renderHalftone(
         const sampleVal = lumBytes[i];
         const rawDarkness = invert ? sampleVal / 255 : (255 - sampleVal) / 255;
 
-        // Pure white background
-        if (rawDarkness <= 0.02) {
+        // Pure white background (no dots)
+        if (rawDarkness <= 0.03) {
           patternPixels32[i] = 0xFFFFFFFF;
           continue;
         }
@@ -145,10 +145,11 @@ export function renderHalftone(
         let gv = (v % S + S) % S - halfS;
 
         const distSq = gu * gu + gv * gv;
+        // Dot area is strictly proportional to darkness; in 100% black darkness=1.0, thresholdR2=maxR2
         const thresholdR2 = rawDarkness * maxR2;
 
         if (distSq <= thresholdR2) {
-          patternPixels32[i] = 0xFF000000; // Ink dot (black)
+          patternPixels32[i] = 0xFF000000; // Ink dot (solid black circle)
           continue;
         }
 
@@ -158,7 +159,7 @@ export function renderHalftone(
           continue;
         }
 
-        // Only evaluate sqrt on the narrow 1-pixel boundary for smooth anti-aliasing
+        // Only evaluate sqrt on the narrow 1-pixel boundary for smooth anti-aliased dot edges
         const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
         if (edgeDist < 0.9) {
           const grayVal = Math.round(edgeDist * 280);

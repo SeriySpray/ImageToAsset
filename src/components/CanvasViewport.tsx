@@ -58,7 +58,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const freehandPointsRef = useRef<Point[]>([]);
   useEffect(() => { freehandPointsRef.current = freehandPoints; }, [freehandPoints]);
 
-  const [mousePos, setMousePos] = useState<Point | null>(null);
+  const mousePosRef = useRef<Point | null>(null);
 
   const scaleRef = useRef(scale);
   const panRef = useRef(pan);
@@ -248,7 +248,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
   const liveClipCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Live Stroke Preview for 60 FPS drawing/erasing
+  // Live Stroke Preview for instant, smooth 60 FPS real-time drawing/erasing
   const renderLiveStrokePreview = useCallback(() => {
     if (!displayCanvasRef.current || !halftoneCanvasRef.current || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
     const dispCtx = displayCanvasRef.current.getContext('2d');
@@ -274,7 +274,12 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     // 2. Render onto display canvas
     dispCtx.clearRect(0, 0, totalW, totalH);
     if (tornEdge.enabled && paperCanvasRef.current) {
+      dispCtx.save();
       dispCtx.drawImage(paperCanvasRef.current, 0, 0);
+      // Immediately clip paper canvas with mask canvas so eraser cuts through paper in REAL TIME!
+      dispCtx.globalCompositeOperation = 'destination-in';
+      dispCtx.drawImage(maskCanvasRef.current, 0, 0);
+      dispCtx.restore();
     }
     dispCtx.drawImage(clipCanvas, 0, 0);
   }, [totalW, totalH, tornEdge.enabled]);
@@ -346,23 +351,29 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       maskCtx.fill();
 
       renderLiveStrokePreview();
+      drawOverlay(pt);
     } else if (activeTool === 'box-select') {
       const initialBox = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
       setBoxSelection(initialBox);
       boxSelectionRef.current = initialBox;
+      drawOverlay(pt);
     } else if (activeTool === 'lasso' || activeTool === 'magic-wand') {
       const initialLasso = [pt];
       setFreehandPoints(initialLasso);
       freehandPointsRef.current = initialLasso;
+      drawOverlay(pt);
     }
   };
 
   // Mouse Move
   const handleMouseMove = (e: React.MouseEvent) => {
     const pt = screenToImage(e.clientX, e.clientY);
-    if (pt) setMousePos(pt);
+    mousePosRef.current = pt;
 
-    if (!isInteractingRef.current) return;
+    if (!isInteractingRef.current) {
+      drawOverlay(pt);
+      return;
+    }
 
     if (dragStartRef.current && (isSpacePressed || activeTool === 'pan' || e.buttons === 4)) {
       onUpdateView(scale, {
@@ -401,14 +412,17 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
       lastPointRef.current = pt;
       renderLiveStrokePreview();
+      drawOverlay(pt);
     } else if (activeTool === 'box-select' && boxSelectionRef.current) {
       const updatedBox = { ...boxSelectionRef.current, x1: pt.x, y1: pt.y };
       setBoxSelection(updatedBox);
       boxSelectionRef.current = updatedBox;
+      drawOverlay(pt);
     } else if ((activeTool === 'lasso' || activeTool === 'magic-wand') && freehandPointsRef.current.length > 0) {
       const updatedLasso = [...freehandPointsRef.current, pt];
       setFreehandPoints(updatedLasso);
       freehandPointsRef.current = updatedLasso;
+      drawOverlay(pt);
     }
   };
 
@@ -429,6 +443,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
     if (activeTool === 'brush' || activeTool === 'eraser') {
       commitMaskCanvas();
+      drawOverlay(mousePosRef.current);
     } else if (activeTool === 'box-select' && curBox) {
       const x = Math.min(curBox.x0, curBox.x1);
       const y = Math.min(curBox.y0, curBox.y1);
@@ -455,6 +470,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setBoxSelection(null);
       boxSelectionRef.current = null;
       commitMaskCanvas();
+      drawOverlay(mousePosRef.current);
     } else if (activeTool === 'magic-wand' && curLasso.length > 0 && sourceCanvasRef.current) {
       // Intelligent Smart Lasso Object Cutout
       const mode = e.altKey ? 'subtract' : (e.shiftKey ? 'add' : 'replace');
@@ -473,6 +489,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setFreehandPoints([]);
       freehandPointsRef.current = [];
       onUpdateMask(targetMask);
+      drawOverlay(mousePosRef.current);
     } else if (activeTool === 'lasso' && curLasso.length > 2) {
       if (e.altKey) {
         maskCtx.globalCompositeOperation = 'destination-out';
@@ -510,53 +527,59 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setFreehandPoints([]);
       freehandPointsRef.current = [];
       commitMaskCanvas();
+      drawOverlay(mousePosRef.current);
     } else {
       setFreehandPoints([]);
       freehandPointsRef.current = [];
+      drawOverlay(mousePosRef.current);
     }
   };
 
-  // Overlay Canvas Rendering (Selection outlines, Cursors)
-  useEffect(() => {
+  // Synchronous Direct Overlay Renderer (60+ FPS without React state latency)
+  const drawOverlay = useCallback((overridePt?: Point | null) => {
     const overlay = overlayCanvasRef.current;
-    if (!overlay || !image || totalW === 0 || totalH === 0) return;
-
-    overlay.width = totalW;
-    overlay.height = totalH;
+    if (!overlay || totalW === 0 || totalH === 0) return;
     const ctx = overlay.getContext('2d');
     if (!ctx) return;
 
     ctx.clearRect(0, 0, totalW, totalH);
 
-    if (boxSelection) {
+    const pt = overridePt !== undefined ? overridePt : mousePosRef.current;
+    const curScale = scaleRef.current;
+
+    // 1. Box Selection
+    const curBox = boxSelectionRef.current;
+    if (curBox) {
       ctx.save();
-      const minX = Math.min(boxSelection.x0, boxSelection.x1);
-      const minY = Math.min(boxSelection.y0, boxSelection.y1);
-      const w = Math.abs(boxSelection.x1 - boxSelection.x0);
-      const h = Math.abs(boxSelection.y1 - boxSelection.y0);
+      const minX = Math.min(curBox.x0, curBox.x1);
+      const minY = Math.min(curBox.y0, curBox.y1);
+      const w = Math.abs(curBox.x1 - curBox.x0);
+      const h = Math.abs(curBox.y1 - curBox.y0);
 
       ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2 / scale;
-      ctx.setLineDash([5 / scale, 5 / scale]);
+      ctx.lineWidth = 2 / curScale;
+      ctx.setLineDash([5 / curScale, 5 / curScale]);
       ctx.strokeRect(minX, minY, w, h);
       ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
       ctx.fillRect(minX, minY, w, h);
       ctx.restore();
     }
 
-    if (freehandPoints.length > 1) {
+    // 2. Freehand / Lasso Points
+    const curPoints = freehandPointsRef.current;
+    if (curPoints.length > 1) {
       ctx.save();
       ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2.5 / scale;
-      ctx.setLineDash([5 / scale, 5 / scale]);
+      ctx.lineWidth = 2.5 / curScale;
+      ctx.setLineDash([5 / curScale, 5 / curScale]);
       ctx.beginPath();
-      ctx.moveTo(freehandPoints[0].x, freehandPoints[0].y);
-      for (let i = 1; i < freehandPoints.length; i++) {
-        ctx.lineTo(freehandPoints[i].x, freehandPoints[i].y);
+      ctx.moveTo(curPoints[0].x, curPoints[0].y);
+      for (let i = 1; i < curPoints.length; i++) {
+        ctx.lineTo(curPoints[i].x, curPoints[i].y);
       }
       ctx.stroke();
 
-      if (freehandPoints.length > 3) {
+      if (curPoints.length > 3) {
         ctx.fillStyle = 'rgba(245, 158, 11, 0.2)';
         ctx.closePath();
         ctx.fill();
@@ -564,25 +587,34 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       ctx.restore();
     }
 
-    // 3. Interactive Circular Cursor for Brush & Eraser (Orange)
-    if (mousePos && (activeTool === 'brush' || activeTool === 'eraser')) {
+    // 3. Interactive Circular Cursor for Brush & Eraser (Orange, Real-time 60+ FPS)
+    if (pt && (activeTool === 'brush' || activeTool === 'eraser')) {
       ctx.save();
       ctx.beginPath();
-      ctx.arc(mousePos.x, mousePos.y, brushSize, 0, Math.PI * 2);
+      ctx.arc(pt.x, pt.y, brushSize, 0, Math.PI * 2);
       ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2 / scale;
+      ctx.lineWidth = 2 / curScale;
       ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
       ctx.fill();
       ctx.stroke();
 
       // Precision Center Crosshair Dot
       ctx.beginPath();
-      ctx.arc(mousePos.x, mousePos.y, 2.5 / scale, 0, Math.PI * 2);
+      ctx.arc(pt.x, pt.y, 2.5 / curScale, 0, Math.PI * 2);
       ctx.fillStyle = '#f59e0b';
       ctx.fill();
       ctx.restore();
     }
-  }, [image, boxSelection, freehandPoints, mousePos, activeTool, brushSize, scale, totalW, totalH]);
+  }, [totalW, totalH, activeTool, brushSize]);
+
+  // Sync Overlay Canvas on state/props changes
+  useEffect(() => {
+    const overlay = overlayCanvasRef.current;
+    if (!overlay || !image || totalW === 0 || totalH === 0) return;
+    overlay.width = totalW;
+    overlay.height = totalH;
+    drawOverlay();
+  }, [image, boxSelection, freehandPoints, activeTool, brushSize, scale, totalW, totalH, drawOverlay]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -630,7 +662,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       onMouseLeave={() => {
         isInteractingRef.current = false;
         setIsInteracting(false);
-        setMousePos(null);
+        mousePosRef.current = null;
+        drawOverlay(null);
       }}
       onDragOver={handleDragOver}
       onDrop={handleDrop}

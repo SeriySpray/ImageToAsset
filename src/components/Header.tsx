@@ -33,7 +33,6 @@ export const Header: React.FC<HeaderProps> = ({
   hasImage,
 }) => {
   const [copied, setCopied] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const handleCopy = async () => {
     const success = await onCopyToClipboard();
@@ -117,54 +116,16 @@ export const Header: React.FC<HeaderProps> = ({
           <span>{copied ? 'Скопійовано!' : 'Копіювати PNG'}</span>
         </button>
 
-        <div className="relative">
-          <button
-            onClick={() => setShowExportMenu(!showExportMenu)}
-            disabled={!hasImage}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-black bg-white hover:bg-neutral-200 border border-white rounded transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-black" />
-            <span>Експорт</span>
-          </button>
-
-          {showExportMenu && (
-            <div className="absolute right-0 top-full mt-1.5 w-44 bg-[#0a0a0a] border border-[#262626] rounded shadow-2xl p-1 z-50">
-              <div className="text-[10px] font-semibold text-neutral-500 px-2 py-1 uppercase tracking-wider">
-                Роздільна здатність
-              </div>
-              <button
-                onClick={() => {
-                  onDownload(1);
-                  setShowExportMenu(false);
-                }}
-                className="w-full text-left px-2 py-1.5 text-xs text-neutral-300 hover:bg-[#181818] hover:text-white rounded flex items-center justify-between cursor-pointer"
-              >
-                <span>1x (Оригінал)</span>
-                <span className="text-[10px] text-neutral-500">PNG</span>
-              </button>
-              <button
-                onClick={() => {
-                  onDownload(2);
-                  setShowExportMenu(false);
-                }}
-                className="w-full text-left px-2 py-1.5 text-xs text-neutral-300 hover:bg-[#181818] hover:text-white rounded flex items-center justify-between cursor-pointer"
-              >
-                <span>2x (Retina HD)</span>
-                <span className="text-[10px] text-white">Рекомендовано</span>
-              </button>
-              <button
-                onClick={() => {
-                  onDownload(4);
-                  setShowExportMenu(false);
-                }}
-                className="w-full text-left px-2 py-1.5 text-xs text-neutral-300 hover:bg-[#181818] hover:text-white rounded flex items-center justify-between cursor-pointer"
-              >
-                <span>4x (Ultra HD)</span>
-                <span className="text-[10px] text-neutral-500">Презентації</span>
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Export Button */}
+        <button
+          onClick={() => onDownload(1)}
+          disabled={!hasImage}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-black bg-white hover:bg-neutral-200 border border-white rounded transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          title="Експортувати прозорий PNG асет без заднього фону"
+        >
+          <Download className="w-3.5 h-3.5 text-black" />
+          <span>Експорт</span>
+        </button>
       </div>
     </header>
   );

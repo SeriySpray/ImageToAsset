@@ -192,7 +192,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       paperCanvasRef.current
     );
 
-    if (renderedCanvasRef.current) {
+    if (renderedCanvasRef) {
+      if (!renderedCanvasRef.current) {
+        renderedCanvasRef.current = document.createElement('canvas');
+      }
       renderedCanvasRef.current.width = totalW;
       renderedCanvasRef.current.height = totalH;
       const refCtx = renderedCanvasRef.current.getContext('2d');
@@ -295,7 +298,15 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
     dispCtx.drawImage(clipCanvas, 0, 0);
     dispCtx.restore();
-  }, [totalW, totalH, tornEdge.enabled]);
+
+    if (renderedCanvasRef && renderedCanvasRef.current && displayCanvasRef.current) {
+      const refCtx = renderedCanvasRef.current.getContext('2d');
+      if (refCtx) {
+        refCtx.clearRect(0, 0, totalW, totalH);
+        refCtx.drawImage(displayCanvasRef.current, 0, 0);
+      }
+    }
+  }, [totalW, totalH, tornEdge.enabled, renderedCanvasRef]);
 
   // Screen to Image coordinates conversion (Unclamped for smooth cross-border painting)
   const screenToImage = useCallback(

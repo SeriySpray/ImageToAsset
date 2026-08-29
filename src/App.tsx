@@ -11,8 +11,6 @@ import { ToolBar } from './components/ToolBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { CanvasViewport } from './components/CanvasViewport';
 import { createEmptyMask } from './engine/segmentation';
-import { renderHalftone } from './engine/halftone';
-import { renderTornPaperAsset } from './engine/torn-edge';
 
 const MAX_WORKING_DIM = 1400;
 
@@ -373,100 +371,24 @@ export const App: React.FC = () => {
     handleUpdateMask(initializePaddedMask(rawW, rawH, pad));
   };
 
-  // High-Resolution Export Engine (1x, 2x Retina, 4x Ultra HD)
-  const handleDownload = (exportScale: number = 1) => {
-    if (!rawImageRef.current || !mask || totalW === 0 || totalH === 0) return;
+  // Direct Transparent PNG Export Engine (Sticker + Border + Shadow without background)
+  const handleDownload = useCallback(() => {
+    if (!renderedCanvasRef.current || totalW === 0 || totalH === 0) return;
 
-    const origImg = rawImageRef.current;
-    const origW = origImg.naturalWidth || origImg.width;
-    const origH = origImg.naturalHeight || origImg.height;
+    const trimmedCanvas = getTrimmedCanvas(renderedCanvasRef.current);
 
-    const scaleFactorToOrig = origW / rawW;
-    const exportPad = Math.round(pad * scaleFactorToOrig * exportScale);
-    const exportImageW = Math.round(origW * exportScale);
-    const exportImageH = Math.round(origH * exportScale);
-    const exportTotalW = exportImageW + exportPad * 2;
-    const exportTotalH = exportImageH + exportPad * 2;
-
-    const exportSourceCanvas = document.createElement('canvas');
-    exportSourceCanvas.width = exportTotalW;
-    exportSourceCanvas.height = exportTotalH;
-    const expSrcCtx = exportSourceCanvas.getContext('2d');
-    if (!expSrcCtx) return;
-
-    expSrcCtx.imageSmoothingEnabled = true;
-    expSrcCtx.imageSmoothingQuality = 'high';
-    expSrcCtx.drawImage(origImg, exportPad, exportPad, exportImageW, exportImageH);
-
-    const exportMaskCanvas = document.createElement('canvas');
-    exportMaskCanvas.width = exportTotalW;
-    exportMaskCanvas.height = exportTotalH;
-    const expMaskCtx = exportMaskCanvas.getContext('2d');
-    if (!expMaskCtx) return;
-
-    const tempWorkMaskCanvas = document.createElement('canvas');
-    tempWorkMaskCanvas.width = totalW;
-    tempWorkMaskCanvas.height = totalH;
-    const tempWorkCtx = tempWorkMaskCanvas.getContext('2d');
-    if (!tempWorkCtx) return;
-
-    const workMaskImgData = tempWorkCtx.createImageData(totalW, totalH);
-    for (let i = 0; i < totalW * totalH; i++) {
-      const v = mask[i] || 0;
-      const idx = i * 4;
-      workMaskImgData.data[idx] = 255;
-      workMaskImgData.data[idx + 1] = 255;
-      workMaskImgData.data[idx + 2] = 255;
-      workMaskImgData.data[idx + 3] = v;
-    }
-    tempWorkCtx.putImageData(workMaskImgData, 0, 0);
-
-    expMaskCtx.imageSmoothingEnabled = true;
-    expMaskCtx.imageSmoothingQuality = 'high';
-    expMaskCtx.drawImage(tempWorkMaskCanvas, 0, 0, exportTotalW, exportTotalH);
-
-    const exportHalftoneCanvas = document.createElement('canvas');
-    exportHalftoneCanvas.width = exportTotalW;
-    exportHalftoneCanvas.height = exportTotalH;
-    const expHalfCtx = exportHalftoneCanvas.getContext('2d');
-    if (!expHalfCtx) return;
-
-    const scaledHalftone: HalftoneSettings = {
-      ...halftone,
-      dotSize: Math.max(2, Math.round(halftone.dotSize * scaleFactorToOrig * exportScale))
-    };
-
-    renderHalftone(expSrcCtx, expHalfCtx, exportTotalW, exportTotalH, scaledHalftone);
-
-    const exportTornEdge: TornEdgeSettings = {
-      ...tornEdge,
-      padding: Math.round(tornEdge.padding * scaleFactorToOrig * exportScale),
-      roughness: Math.round(tornEdge.roughness * scaleFactorToOrig * exportScale),
-      canvasPadding: exportPad
-    };
-
-    const finalExportCanvas = document.createElement('canvas');
-    finalExportCanvas.width = exportTotalW;
-    finalExportCanvas.height = exportTotalH;
-    const finalCtx = finalExportCanvas.getContext('2d');
-    if (!finalCtx) return;
-
-    renderTornPaperAsset(
-      exportHalftoneCanvas,
-      finalCtx,
-      exportMaskCanvas,
-      exportTotalW,
-      exportTotalH,
-      exportTornEdge
-    );
-
-    const trimmedExportCanvas = getTrimmedCanvas(finalExportCanvas);
-
-    const link = document.createElement('a');
-    link.download = `imagetoasset-${halftone.mode}-${exportScale}x-${Date.now()}.png`;
-    link.href = trimmedExportCanvas.toDataURL('image/png');
-    link.click();
-  };
+    trimmedCanvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = `imagetoasset-sticker-${Date.now()}.png`;
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, 'image/png');
+  }, [totalW, totalH]);
 
   const handleResetZoom = () => {
     if (!image) return;

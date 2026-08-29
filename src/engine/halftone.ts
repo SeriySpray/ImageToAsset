@@ -110,12 +110,12 @@ export function renderHalftone(
 
     const S = Math.max(2, dotSize);
     const halfS = S * 0.5;
-    // The maximum radius is strictly bounded to 88% of halfS (radius = 0.44 * S, diameter = 0.88 * S).
-    // This ensures that adjacent dots in 100% black zones have a guaranteed clear gap (0.12 * S)
-    // and ALWAYS appear as distinct, crisp, separated round dots rather than merging into a solid black mass.
+    const invS = 1 / S;
+    // Bounded max radius to keep dots separated on white paper:
     const maxRadius = halfS * 0.88;
     const maxR2 = maxRadius * maxRadius;
     const marginDist = Math.max(2, S * 0.8);
+    const filterStep = Math.max(1, Math.round(S * 0.35));
 
     for (let y = 0; y < height; y++) {
       const rowOffset = y * width;
@@ -128,8 +128,49 @@ export function renderHalftone(
           continue;
         }
 
-        const sampleVal = lumBytes[i];
-        const rawDarkness = invert ? sampleVal / 255 : (255 - sampleVal) / 255;
+        // 45-degree screen coordinates
+        const u = (x + y) * INV_SQRT2;
+        const v = (x - y) * INV_SQRT2;
+
+        // Cell index and center in (u, v) space
+        const ku = Math.floor(u * invS + 0.5);
+        const kv = Math.floor(v * invS + 0.5);
+        const uc = ku * S;
+        const vc = kv * S;
+
+        // Local displacement from cell center
+        const gu = u - uc;
+        const gv = v - vc;
+        const distSq = gu * gu + gv * gv;
+
+        // Fast bounding box reject if pixel is outside maximum possible dot radius + margin
+        if (distSq > maxR2 + marginDist) {
+          patternPixels32[i] = 0xFFFFFFFF;
+          continue;
+        }
+
+        // Cell center in image screen coordinates (x_c, y_c)
+        const xc = (uc + vc) * INV_SQRT2;
+        const yc = (uc - vc) * INV_SQRT2;
+        const ixc = Math.max(0, Math.min(width - 1, (xc + 0.5) | 0));
+        const iyc = Math.max(0, Math.min(height - 1, (yc + 0.5) | 0));
+
+        // Sample tone at cell center with 5-tap kernel for smooth size graduation at color boundaries
+        const centerIdx = iyc * width + ixc;
+        const c0 = lumBytes[centerIdx];
+
+        const xL = Math.max(0, ixc - filterStep);
+        const xR = Math.min(width - 1, ixc + filterStep);
+        const yT = Math.max(0, iyc - filterStep);
+        const yB = Math.min(height - 1, iyc + filterStep);
+
+        const cL = lumBytes[iyc * width + xL];
+        const cR = lumBytes[iyc * width + xR];
+        const cT = lumBytes[yT * width + ixc];
+        const cB = lumBytes[yB * width + ixc];
+
+        const smoothedLum = (c0 * 4 + cL + cR + cT + cB) >> 3;
+        const rawDarkness = invert ? smoothedLum / 255 : (255 - smoothedLum) / 255;
 
         // Pure white background (no dots)
         if (rawDarkness <= 0.03) {
@@ -137,29 +178,21 @@ export function renderHalftone(
           continue;
         }
 
-        // 45-degree screen coordinates
-        const u = (x + y) * INV_SQRT2;
-        const v = (x - y) * INV_SQRT2;
-
-        let gu = (u % S + S) % S - halfS;
-        let gv = (v % S + S) % S - halfS;
-
-        const distSq = gu * gu + gv * gv;
-        // Dot area is strictly proportional to darkness; in 100% black darkness=1.0, thresholdR2=maxR2
+        // Cell-based threshold radius ensures every dot is an intact, complete round circle whose size scales smoothly
         const thresholdR2 = rawDarkness * maxR2;
 
         if (distSq <= thresholdR2) {
-          patternPixels32[i] = 0xFF000000; // Ink dot (solid black circle)
+          patternPixels32[i] = 0xFF000000; // Solid black circle interior
           continue;
         }
 
-        // Fast path: Far outside dot radius (skip sqrt)
+        // Fast path: Far outside dot radius
         if (distSq > thresholdR2 + marginDist) {
           patternPixels32[i] = 0xFFFFFFFF;
           continue;
         }
 
-        // Only evaluate sqrt on the narrow 1-pixel boundary for smooth anti-aliased dot edges
+        // Smooth sub-pixel anti-aliased circular boundary
         const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
         if (edgeDist < 0.9) {
           const grayVal = Math.round(edgeDist * 280);

@@ -160,23 +160,6 @@ export const App: React.FC = () => {
     img.src = objectUrl;
   };
 
-  const handleSelectSample = (samplePath: string) => {
-    const t0 = performance.now();
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const t1 = performance.now();
-      console.log(`[ImageToAsset Perf] Default sample loaded in ${(t1 - t0).toFixed(2)}ms (${samplePath})`);
-      loadImage(img);
-    };
-    img.src = samplePath;
-  };
-
-  // Automatically load default books reference on initial launch
-  useEffect(() => {
-    handleSelectSample('/samples/books_reference.jpg');
-  }, []);
-
   // Global Paste (Ctrl+V)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {

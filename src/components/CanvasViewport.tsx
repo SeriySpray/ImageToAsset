@@ -535,20 +535,20 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       const w = Math.abs(boxSelection.x1 - boxSelection.x0);
       const h = Math.abs(boxSelection.y1 - boxSelection.y0);
 
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5 / scale;
-      ctx.setLineDash([4 / scale, 4 / scale]);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2 / scale;
+      ctx.setLineDash([5 / scale, 5 / scale]);
       ctx.strokeRect(minX, minY, w, h);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
       ctx.fillRect(minX, minY, w, h);
       ctx.restore();
     }
 
     if (freehandPoints.length > 1) {
       ctx.save();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2 / scale;
-      ctx.setLineDash([4 / scale, 4 / scale]);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2.5 / scale;
+      ctx.setLineDash([5 / scale, 5 / scale]);
       ctx.beginPath();
       ctx.moveTo(freehandPoints[0].x, freehandPoints[0].y);
       for (let i = 1; i < freehandPoints.length; i++) {
@@ -557,30 +557,28 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       ctx.stroke();
 
       if (freehandPoints.length > 3) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.2)';
         ctx.closePath();
         ctx.fill();
       }
       ctx.restore();
     }
 
-    // 3. Interactive Circular Cursor for Brush & Eraser
+    // 3. Interactive Circular Cursor for Brush & Eraser (Orange)
     if (mousePos && (activeTool === 'brush' || activeTool === 'eraser')) {
       ctx.save();
       ctx.beginPath();
       ctx.arc(mousePos.x, mousePos.y, brushSize, 0, Math.PI * 2);
-      ctx.strokeStyle = activeTool === 'eraser' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.85)';
-      ctx.lineWidth = 1.5 / scale;
-      ctx.fillStyle = activeTool === 'eraser' 
-        ? 'rgba(255, 255, 255, 0.12)' 
-        : 'rgba(255, 255, 255, 0.18)';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2 / scale;
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
       ctx.fill();
       ctx.stroke();
 
       // Precision Center Crosshair Dot
       ctx.beginPath();
       ctx.arc(mousePos.x, mousePos.y, 2.5 / scale, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = '#f59e0b';
       ctx.fill();
       ctx.restore();
     }

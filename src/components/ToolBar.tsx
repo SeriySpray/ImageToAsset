@@ -52,16 +52,23 @@ export const ToolBar: React.FC<ToolBarProps> = ({
       <div className="flex flex-col items-center gap-1.5 w-full px-1.5">
         {tools.map((tool) => {
           const isActive = activeTool === tool.id;
+          const isMagic = tool.id === 'magic-wand';
+
+          let buttonStyle = 'text-neutral-400 hover:text-white hover:bg-[#181818]';
+          if (isMagic) {
+            buttonStyle = isActive
+              ? 'bg-[#f59e0b] text-black font-bold border border-[#f59e0b] shadow-sm'
+              : 'text-[#f59e0b] border border-[#f59e0b]/30 bg-[#f59e0b]/5 hover:bg-[#f59e0b]/15 hover:border-[#f59e0b]/60';
+          } else if (isActive) {
+            buttonStyle = 'bg-white text-black font-bold shadow-none';
+          }
+
           return (
             <button
               key={tool.id}
               onClick={() => onSelectTool(tool.id)}
               title={`${tool.name}`}
-              className={`w-9 h-9 rounded flex items-center justify-center transition relative group cursor-pointer ${
-                isActive
-                  ? 'bg-white text-black font-bold shadow-none'
-                  : 'text-neutral-400 hover:text-white hover:bg-[#181818]'
-              }`}
+              className={`w-9 h-9 rounded flex items-center justify-center transition relative group cursor-pointer ${buttonStyle}`}
             >
               {tool.icon}
 

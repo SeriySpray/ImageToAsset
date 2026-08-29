@@ -6,9 +6,9 @@ import { HalftoneSettings } from '../types';
 function createContrastLUT(contrast: number, invert: boolean): Uint8Array {
   const lut = new Uint8Array(256);
   const c = Math.max(0, Math.min(100, contrast)) / 100;
-  const blackFloor = c * 0.08;
-  const whiteCeil = 1.0 - c * 0.06;
-  const power = c > 0.05 ? 1 + c * 1.8 : 1;
+  const blackFloor = c * 0.12;
+  const whiteCeil = 1.0 - c * 0.08;
+  const power = c > 0.05 ? 1 + c * 2.2 : 1;
 
   for (let i = 0; i < 256; i++) {
     let val = i / 255;
@@ -35,7 +35,7 @@ function createContrastLUT(contrast: number, invert: boolean): Uint8Array {
 const INV_SQRT2 = 0.7071067811865476;
 
 /**
- * Ultra-high-speed pixel-grid rasterizer for 45° Halftone Dot Matrix, Hybrid, and Grayscale in 8ms
+ * Ultra-high-speed pixel-grid rasterizer for 45° Halftone Dot Matrix, Hybrid, Graphic Dots, and Grayscale in 8ms
  */
 export function renderHalftone(
   sourceCtx: CanvasRenderingContext2D,
@@ -97,7 +97,7 @@ export function renderHalftone(
     return;
   }
 
-  // 2. Direct 32-bit Raster Screen for Dots & Hybrid (0 vector paths, ~8ms total)
+  // 2. Mode: Classic Photo Halftone Raster (Original Newspaper Screen for Photos)
   if (mode === 'dots' || mode === 'hybrid') {
     const htPatternCanvas = document.createElement('canvas');
     htPatternCanvas.width = width;
@@ -110,11 +110,8 @@ export function renderHalftone(
 
     const S = Math.max(2, dotSize);
     const halfS = S * 0.5;
-    const invS = 1 / S;
-    // Bounded max radius to keep dots separated on white paper (radius = 0.45 * S, diameter = 0.90 * S)
-    const maxRadius = halfS * 0.90;
-    const maxR2 = maxRadius * maxRadius;
-    const marginDist = Math.max(2, S * 0.85);
+    const maxR2 = (S * S * 0.5) * 1.08;
+    const marginDist = S * 2;
 
     for (let y = 0; y < height; y++) {
       const rowOffset = y * width;
@@ -127,72 +124,47 @@ export function renderHalftone(
           continue;
         }
 
+        const sampleVal = lumBytes[i];
+        const darkness = invert ? sampleVal / 255 : (255 - sampleVal) / 255;
+
+        // Pure white background
+        if (darkness <= 0.03) {
+          patternPixels32[i] = 0xFFFFFFFF;
+          continue;
+        }
+
+        // Pure solid black
+        if (darkness >= 0.95) {
+          patternPixels32[i] = 0xFF000000;
+          continue;
+        }
+
         // 45-degree screen coordinates
         const u = (x + y) * INV_SQRT2;
         const v = (x - y) * INV_SQRT2;
 
-        // Cell index and center in (u, v) space
-        const ku = Math.floor(u * invS + 0.5);
-        const kv = Math.floor(v * invS + 0.5);
-        const uc = ku * S;
-        const vc = kv * S;
+        let gu = (u % S + S) % S - halfS;
+        let gv = (v % S + S) % S - halfS;
 
-        // Local displacement from cell center
-        const gu = u - uc;
-        const gv = v - vc;
         const distSq = gu * gu + gv * gv;
-
-        // Fast bounding box reject if pixel is outside maximum possible dot radius + margin
-        if (distSq > maxR2 + marginDist) {
-          patternPixels32[i] = 0xFFFFFFFF;
-          continue;
-        }
-
-        // Cell center in image screen coordinates (x_c, y_c)
-        const xc = (uc + vc) * INV_SQRT2;
-        const yc = (uc - vc) * INV_SQRT2;
-        const ixc = Math.max(0, Math.min(width - 1, (xc + 0.5) | 0));
-        const iyc = Math.max(0, Math.min(height - 1, (yc + 0.5) | 0));
-
-        // High-definition tone synthesis:
-        // Blend 65% cell center (for circular dot stability) + 35% local pixel (for razor-sharp edge & texture fidelity)
-        const centerLum = lumBytes[iyc * width + ixc];
-        const localLum = lumBytes[i];
-        const edgeDelta = localLum - centerLum;
-        const sharpLum = Math.max(0, Math.min(255, ((centerLum * 5 + localLum * 3) >> 3) + ((edgeDelta * 3) >> 3)));
-
-        const rawDarkness = invert ? sharpLum / 255 : (255 - sharpLum) / 255;
-
-        // Pure white background (no dots)
-        if (rawDarkness <= 0.02) {
-          patternPixels32[i] = 0xFFFFFFFF;
-          continue;
-        }
-
-        // Multi-tone ink shading: modulate ink darkness with local tone for photographic depth
-        const baseInk = Math.max(0, Math.min(150, (sharpLum * 0.32) | 0));
-        const inkVal = invert ? (255 - baseInk) : baseInk;
-
-        // Dot radius scales with darkness; in 100% black darkness=1.0, thresholdR2=maxR2 (distinct separated dots)
-        const thresholdR2 = rawDarkness * maxR2;
+        const thresholdR2 = darkness * maxR2;
 
         if (distSq <= thresholdR2) {
-          patternPixels32[i] = 0xFF000000 | (inkVal << 16) | (inkVal << 8) | inkVal;
+          patternPixels32[i] = 0xFF000000; // Ink dot (black)
           continue;
         }
 
-        // Fast path: Far outside dot radius
+        // Fast path: Far outside dot radius (skip sqrt)
         if (distSq > thresholdR2 + marginDist) {
           patternPixels32[i] = 0xFFFFFFFF;
           continue;
         }
 
-        // Crisp sub-pixel anti-aliasing with tonal ink ramp
+        // Only evaluate sqrt on the narrow 1-pixel boundary
         const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
-        if (edgeDist < 0.85) {
-          const t = edgeDist / 0.85;
-          const rampVal = (inkVal + (255 - inkVal) * t) | 0;
-          const clamped = Math.max(0, Math.min(255, rampVal));
+        if (edgeDist < 0.9) {
+          const grayVal = Math.round(edgeDist * 280);
+          const clamped = Math.max(0, Math.min(255, grayVal));
           patternPixels32[i] = 0xFF000000 | (clamped << 16) | (clamped << 8) | clamped;
         } else {
           patternPixels32[i] = 0xFFFFFFFF;
@@ -219,6 +191,97 @@ export function renderHalftone(
     } else {
       targetCtx.drawImage(htPatternCanvas, 0, 0);
     }
+
+    const t1 = performance.now();
+    console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
+    return;
+  }
+
+  // 3. Mode: Graphic & Line-Art Halftone Raster (Isolated Dots for Solid Black & Graphics)
+  if (mode === 'graphic-dots') {
+    const htPatternCanvas = document.createElement('canvas');
+    htPatternCanvas.width = width;
+    htPatternCanvas.height = height;
+    const htCtx = htPatternCanvas.getContext('2d', { willReadFrequently: true });
+    if (!htCtx) return;
+
+    const patternImgData = htCtx.createImageData(width, height);
+    const patternPixels32 = new Uint32Array(patternImgData.data.buffer);
+
+    const S = Math.max(2, dotSize);
+    const halfS = S * 0.5;
+    const invS = 1 / S;
+    const maxRadius = halfS * 0.88;
+    const maxR2 = maxRadius * maxRadius;
+    const marginDist = Math.max(2, S * 0.85);
+
+    for (let y = 0; y < height; y++) {
+      const rowOffset = y * width;
+      for (let x = 0; x < width; x++) {
+        const i = rowOffset + x;
+
+        // Keep transparent pixels transparent without creating dots or background
+        if (srcPixels[i * 4 + 3] < 5) {
+          patternPixels32[i] = 0x00000000;
+          continue;
+        }
+
+        // 45-degree screen coordinates
+        const u = (x + y) * INV_SQRT2;
+        const v = (x - y) * INV_SQRT2;
+
+        const ku = Math.floor(u * invS + 0.5);
+        const kv = Math.floor(v * invS + 0.5);
+        const uc = ku * S;
+        const vc = kv * S;
+
+        const gu = u - uc;
+        const gv = v - vc;
+        const distSq = gu * gu + gv * gv;
+
+        if (distSq > maxR2 + marginDist) {
+          patternPixels32[i] = 0xFFFFFFFF;
+          continue;
+        }
+
+        const xc = (uc + vc) * INV_SQRT2;
+        const yc = (uc - vc) * INV_SQRT2;
+        const ixc = Math.max(0, Math.min(width - 1, (xc + 0.5) | 0));
+        const iyc = Math.max(0, Math.min(height - 1, (yc + 0.5) | 0));
+
+        const centerLum = lumBytes[iyc * width + ixc];
+        const rawDarkness = invert ? centerLum / 255 : (255 - centerLum) / 255;
+
+        if (rawDarkness <= 0.03) {
+          patternPixels32[i] = 0xFFFFFFFF;
+          continue;
+        }
+
+        const thresholdR2 = rawDarkness * maxR2;
+
+        if (distSq <= thresholdR2) {
+          patternPixels32[i] = 0xFF000000;
+          continue;
+        }
+
+        if (distSq > thresholdR2 + marginDist) {
+          patternPixels32[i] = 0xFFFFFFFF;
+          continue;
+        }
+
+        const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
+        if (edgeDist < 0.9) {
+          const grayVal = Math.round(edgeDist * 280);
+          const clamped = Math.max(0, Math.min(255, grayVal));
+          patternPixels32[i] = 0xFF000000 | (clamped << 16) | (clamped << 8) | clamped;
+        } else {
+          patternPixels32[i] = 0xFFFFFFFF;
+        }
+      }
+    }
+
+    htCtx.putImageData(patternImgData, 0, 0);
+    targetCtx.drawImage(htPatternCanvas, 0, 0);
 
     const t1 = performance.now();
     console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);

@@ -7,10 +7,11 @@ export type ToolType =
   | 'pan';
 
 export type GraphicMode = 
-  | 'grayscale-contrast' // Rich Grayscale with full tonal spectrum
+  | 'dots'               // Photo Halftone (Classic Newspaper Dot Matrix for Photos)
+  | 'graphic-dots'       // Graphic / Line-Art Halftone (Isolated Dots for Solid Blacks & Graphics)
   | 'hybrid'             // Grayscale + Halftone dots overlay
-  | 'dots'               // Halftone dot matrix
-  | 'engraving';         // Retro engraving hatching
+  | 'engraving'          // Retro engraving hatching
+  | 'grayscale-contrast';// Rich Grayscale with full tonal spectrum
 
 export interface HalftoneSettings {
   mode: GraphicMode;

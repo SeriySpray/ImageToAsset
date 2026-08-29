@@ -8,7 +8,8 @@ import {
   Eye, 
   Layers, 
   Image as ImageIcon,
-  X
+  X,
+  Grid
 } from 'lucide-react';
 import { HalftoneSettings, TornEdgeSettings, GraphicMode } from '../types';
 
@@ -40,10 +41,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   if (!hasImage) return null;
 
   const modes: { id: GraphicMode; name: string; icon: React.ReactNode }[] = [
-    { id: 'grayscale-contrast', name: 'Контрастне ч/б', icon: <ImageIcon className="w-3.5 h-3.5" /> },
-    { id: 'dots', name: 'Газетний растр', icon: <CircleDot className="w-3.5 h-3.5" /> },
+    { id: 'dots', name: 'Фото-растр', icon: <CircleDot className="w-3.5 h-3.5" /> },
+    { id: 'graphic-dots', name: 'Графічний растр', icon: <Grid className="w-3.5 h-3.5" /> },
     { id: 'hybrid', name: 'Фото + Растр', icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'engraving', name: 'Гравюра', icon: <Activity className="w-3.5 h-3.5" /> },
+    { id: 'grayscale-contrast', name: 'Контрастне ч/б', icon: <ImageIcon className="w-3.5 h-3.5" /> },
   ];
 
   const paperColors = [

@@ -12,7 +12,7 @@ import { ToolBar } from './components/ToolBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { CanvasViewport } from './components/CanvasViewport';
 import { SampleImagesModal } from './components/SampleImagesModal';
-import { createEmptyMask, smartAutoCutout } from './engine/segmentation';
+import { createEmptyMask } from './engine/segmentation';
 import { renderHalftone } from './engine/halftone';
 import { renderTornPaperAsset } from './engine/torn-edge';
 
@@ -65,7 +65,7 @@ export const App: React.FC = () => {
   }, []);
 
   // Load image into memory with automatic working-canvas clamping for ultra-fast 60 FPS performance
-  const loadImage = useCallback((imgElement: HTMLImageElement, autoCutout = false) => {
+  const loadImage = useCallback((imgElement: HTMLImageElement) => {
     const t0 = performance.now();
     rawImageRef.current = imgElement;
     const origW = imgElement.naturalWidth || imgElement.width;
@@ -98,24 +98,6 @@ export const App: React.FC = () => {
 
     const initialMask = initializePaddedMask(workW, workH, currentPad);
 
-    if (autoCutout) {
-      const totalWidth = workW + currentPad * 2;
-      const totalHeight = workH + currentPad * 2;
-      const offCanvas = document.createElement('canvas');
-      offCanvas.width = totalWidth;
-      offCanvas.height = totalHeight;
-      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
-      if (offCtx) {
-        offCtx.drawImage(targetSource, currentPad, currentPad, workW, workH);
-        smartAutoCutout(offCtx, initialMask, totalWidth, totalHeight, {
-          x0: currentPad,
-          y0: currentPad,
-          x1: currentPad + workW,
-          y1: currentPad + workH,
-        });
-      }
-    }
-
     setMask(initialMask);
     setUndoStack([]);
     setRedoStack([]);
@@ -139,7 +121,7 @@ export const App: React.FC = () => {
       URL.revokeObjectURL(objectUrl);
       const t1 = performance.now();
       console.log(`[ImageToAsset Perf] User file loaded in ${(t1 - t0).toFixed(2)}ms (original resolution: ${img.naturalWidth}x${img.naturalHeight})`);
-      loadImage(img, false);
+      loadImage(img);
     };
     img.src = objectUrl;
   };
@@ -151,7 +133,7 @@ export const App: React.FC = () => {
     img.onload = () => {
       const t1 = performance.now();
       console.log(`[ImageToAsset Perf] Sample image fetched in ${(t1 - t0).toFixed(2)}ms (${samplePath})`);
-      loadImage(img, false);
+      loadImage(img);
       if (presetId) {
         const preset = PRESETS.find((p) => p.id === presetId);
         if (preset) {
@@ -219,36 +201,6 @@ export const App: React.FC = () => {
     setMask(next);
     console.log(`[ImageToAsset Perf] Redo action performed`);
   }, [redoStack, mask]);
-
-  // On-demand Smart AI Cutout
-  const handleSmartAutoCutout = () => {
-    if (!image || totalW === 0 || totalH === 0) return;
-    const t0 = performance.now();
-    const autoMask = new Uint8ClampedArray(totalW * totalH);
-    const offCanvas = document.createElement('canvas');
-    offCanvas.width = totalW;
-    offCanvas.height = totalH;
-    const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
-    if (offCtx) {
-      offCtx.drawImage(image, pad, pad, rawW, rawH);
-      smartAutoCutout(
-        offCtx,
-        autoMask,
-        totalW,
-        totalH,
-        {
-          x0: pad,
-          y0: pad,
-          x1: pad + rawW,
-          y1: pad + rawH,
-        },
-        mask
-      );
-      handleUpdateMask(autoMask);
-    }
-    const t1 = performance.now();
-    console.log(`[ImageToAsset Perf] Smart auto cutout completed in ${(t1 - t0).toFixed(2)}ms`);
-  };
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -515,7 +467,6 @@ export const App: React.FC = () => {
         <ToolBar
           activeTool={activeTool}
           onSelectTool={setActiveTool}
-          onAutoCutout={handleSmartAutoCutout}
           brushSize={brushSize}
           onChangeBrushSize={setBrushSize}
           wandTolerance={wandTolerance}

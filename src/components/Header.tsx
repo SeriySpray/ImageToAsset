@@ -6,7 +6,6 @@ import {
   Undo2, 
   Redo2, 
   Check,
-  SplitSquareVertical,
   Maximize2
 } from 'lucide-react';
 
@@ -18,8 +17,6 @@ interface HeaderProps {
   canRedo: boolean;
   onCopyToClipboard: () => Promise<boolean>;
   onDownload: (scale: number) => void;
-  showSplitView: boolean;
-  onToggleSplitView: () => void;
   onResetZoom: () => void;
   hasImage: boolean;
 }
@@ -32,8 +29,6 @@ export const Header: React.FC<HeaderProps> = ({
   canRedo,
   onCopyToClipboard,
   onDownload,
-  showSplitView,
-  onToggleSplitView,
   onResetZoom,
   hasImage,
 }) => {
@@ -49,30 +44,25 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-14 border-b border-slate-800/80 bg-[#12151e]/90 backdrop-blur-md px-4 flex items-center justify-between z-30 select-none">
+    <header className="h-13 border-b border-[#262626] bg-[#0a0a0a] px-4 flex items-center justify-between z-30 select-none font-mono">
       {/* Left: Branding & Upload */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 via-indigo-500 to-sky-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-bold text-sm tracking-wider">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded bg-white flex items-center justify-center text-black font-bold text-xs tracking-wider">
             IA
           </div>
-          <div>
-            <h1 className="text-sm font-semibold text-slate-100 flex items-center gap-1.5 leading-none">
-              ImageToAsset
-              <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                Sticker Studio
-              </span>
-            </h1>
-          </div>
+          <h1 className="text-xs font-semibold text-white tracking-wide">
+            ImageToAsset
+          </h1>
         </div>
 
-        <div className="h-5 w-px bg-slate-800 mx-1" />
+        <div className="h-4 w-px bg-[#262626] mx-1" />
 
         <button
           onClick={onUploadClick}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800/80 hover:bg-slate-700/80 hover:text-white border border-slate-700/60 rounded-lg transition-all shadow-sm cursor-pointer"
+          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-neutral-300 bg-[#141414] hover:bg-[#1f1f1f] hover:text-white border border-[#262626] hover:border-[#404040] rounded transition cursor-pointer"
         >
-          <Upload className="w-3.5 h-3.5 text-indigo-400" />
+          <Upload className="w-3.5 h-3.5 text-neutral-400" />
           <span>Завантажити фото</span>
         </button>
       </div>
@@ -80,47 +70,32 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Center: Quick Navigation & View Tools */}
       <div className="flex items-center gap-2">
         {hasImage && (
-          <>
-            <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800/80 p-0.5 rounded-lg">
-              <button
-                onClick={onUndo}
-                disabled={!canUndo}
-                title="Скасувати (Ctrl+Z)"
-                className="p-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-slate-800 transition cursor-pointer"
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={onRedo}
-                disabled={!canRedo}
-                title="Повторити (Ctrl+Y / Ctrl+Shift+Z)"
-                className="p-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-slate-800 transition cursor-pointer"
-              >
-                <Redo2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800/80 p-0.5 rounded-lg">
-              <button
-                onClick={onToggleSplitView}
-                title="Розділений екран До / Після"
-                className={`p-1.5 rounded transition cursor-pointer ${
-                  showSplitView
-                    ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                }`}
-              >
-                <SplitSquareVertical className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={onResetZoom}
-                title="Скинути масштаб (100%)"
-                className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded transition cursor-pointer"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </>
+          <div className="flex items-center gap-1 bg-[#141414] border border-[#262626] p-0.5 rounded">
+            <button
+              onClick={onUndo}
+              disabled={!canUndo}
+              title="Скасувати (Ctrl+Z)"
+              className="p-1.5 text-neutral-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed rounded hover:bg-[#222222] transition cursor-pointer"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={onRedo}
+              disabled={!canRedo}
+              title="Повторити (Ctrl+Y / Ctrl+Shift+Z)"
+              className="p-1.5 text-neutral-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed rounded hover:bg-[#222222] transition cursor-pointer"
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+            </button>
+            <div className="h-3.5 w-px bg-[#262626] mx-0.5" />
+            <button
+              onClick={onResetZoom}
+              title="Скинути масштаб (100%)"
+              className="p-1.5 text-neutral-400 hover:text-white hover:bg-[#222222] rounded transition cursor-pointer"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -129,14 +104,14 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={handleCopy}
           disabled={!hasImage}
-          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition shadow-sm cursor-pointer ${
+          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded transition cursor-pointer ${
             copied
-              ? 'bg-emerald-600 text-white border border-emerald-500'
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/80 disabled:opacity-40 disabled:cursor-not-allowed'
+              ? 'bg-white text-black border border-white font-semibold'
+              : 'bg-[#141414] hover:bg-[#1f1f1f] text-neutral-200 border border-[#262626] hover:border-[#404040] disabled:opacity-30 disabled:cursor-not-allowed'
           }`}
           title="Копіювати прозорий PNG асет у буфер обміну (Ctrl+C)"
         >
-          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5 text-neutral-400" />}
           <span>{copied ? 'Скопійовано!' : 'Копіювати PNG'}</span>
         </button>
 
@@ -144,15 +119,15 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => setShowExportMenu(!showExportMenu)}
             disabled={!hasImage}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-black bg-white hover:bg-neutral-200 border border-white rounded transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5 text-indigo-400" />
+            <Download className="w-3.5 h-3.5 text-black" />
             <span>Експорт</span>
           </button>
 
           {showExportMenu && (
-            <div className="absolute right-0 top-full mt-1.5 w-44 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-1.5 z-50">
-              <div className="text-[10px] font-semibold text-slate-400 px-2.5 py-1 uppercase tracking-wider">
+            <div className="absolute right-0 top-full mt-1.5 w-44 bg-[#0a0a0a] border border-[#262626] rounded shadow-2xl p-1 z-50">
+              <div className="text-[10px] font-semibold text-neutral-500 px-2 py-1 uppercase tracking-wider">
                 Роздільна здатність
               </div>
               <button
@@ -160,30 +135,30 @@ export const Header: React.FC<HeaderProps> = ({
                   onDownload(1);
                   setShowExportMenu(false);
                 }}
-                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between cursor-pointer"
+                className="w-full text-left px-2 py-1.5 text-xs text-neutral-300 hover:bg-[#181818] hover:text-white rounded flex items-center justify-between cursor-pointer"
               >
                 <span>1x (Оригінал)</span>
-                <span className="text-[10px] text-slate-400">PNG</span>
+                <span className="text-[10px] text-neutral-500">PNG</span>
               </button>
               <button
                 onClick={() => {
                   onDownload(2);
                   setShowExportMenu(false);
                 }}
-                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between cursor-pointer"
+                className="w-full text-left px-2 py-1.5 text-xs text-neutral-300 hover:bg-[#181818] hover:text-white rounded flex items-center justify-between cursor-pointer"
               >
                 <span>2x (Retina HD)</span>
-                <span className="text-[10px] text-indigo-400">Рекомендовано</span>
+                <span className="text-[10px] text-white">Рекомендовано</span>
               </button>
               <button
                 onClick={() => {
                   onDownload(4);
                   setShowExportMenu(false);
                 }}
-                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between cursor-pointer"
+                className="w-full text-left px-2 py-1.5 text-xs text-neutral-300 hover:bg-[#181818] hover:text-white rounded flex items-center justify-between cursor-pointer"
               >
                 <span>4x (Ultra HD)</span>
-                <span className="text-[10px] text-slate-400">Презентації</span>
+                <span className="text-[10px] text-neutral-500">Презентації</span>
               </button>
             </div>
           )}

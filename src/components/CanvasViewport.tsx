@@ -14,7 +14,6 @@ interface CanvasViewportProps {
   halftone: HalftoneSettings;
   tornEdge: TornEdgeSettings;
   canvasBg: 'dark-check' | 'light-check' | 'dark-solid' | 'light-solid';
-  showSplitView: boolean;
   onDropFile: (file: File) => void;
   scale: number;
   pan: Point;
@@ -31,7 +30,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   halftone,
   tornEdge,
   canvasBg,
-  showSplitView,
   onDropFile,
   scale,
   pan,
@@ -56,14 +54,11 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const boxSelectionRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   useEffect(() => { boxSelectionRef.current = boxSelection; }, [boxSelection]);
 
-
-
   const [freehandPoints, setFreehandPoints] = useState<Point[]>([]);
   const freehandPointsRef = useRef<Point[]>([]);
   useEffect(() => { freehandPointsRef.current = freehandPoints; }, [freehandPoints]);
 
   const [mousePos, setMousePos] = useState<Point | null>(null);
-  const [splitPosition, setSplitPosition] = useState<number>(0.5);
 
   const scaleRef = useRef(scale);
   const panRef = useRef(pan);
@@ -71,7 +66,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   useEffect(() => { panRef.current = pan; }, [pan]);
 
   // Buffer padding around image
-  const pad = tornEdge.canvasPadding || 60;
+  const pad = 60;
   const rawW = image ? ((image as HTMLImageElement).naturalWidth || image.width) : 0;
   const rawH = image ? ((image as HTMLImageElement).naturalHeight || image.height) : 0;
   const totalW = rawW > 0 ? rawW + pad * 2 : 0;
@@ -81,6 +76,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !e.repeat && document.activeElement?.tagName !== 'INPUT') {
+        e.preventDefault();
         setIsSpacePressed(true);
       }
     };
@@ -97,46 +93,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     };
   }, []);
 
-  // Helper to commit offscreen maskCanvas to Uint8ClampedArray mask state
-  const commitMaskCanvas = useCallback(() => {
-    if (!maskCanvasRef.current || !image || totalW === 0 || totalH === 0) return;
-    const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
-    if (!maskCtx) return;
-
-    const imgData = maskCtx.getImageData(0, 0, totalW, totalH);
-    const pixels = imgData.data;
-    const newMask = new Uint8ClampedArray(totalW * totalH);
-
-    let hasChange = false;
-    for (let i = 0; i < totalW * totalH; i++) {
-      const alpha = pixels[i * 4 + 3];
-      newMask[i] = alpha;
-      if (!mask || mask[i] !== alpha) {
-        hasChange = true;
-      }
-    }
-
-    if (hasChange) {
-      onUpdateMask(newMask);
-    }
-  }, [image, mask, totalW, totalH, onUpdateMask]);
-
-  // Global Mouse Up Listener
-  useEffect(() => {
-    const handleGlobalMouseUp = () => {
-      if (isInteractingRef.current) {
-        isInteractingRef.current = false;
-        setIsInteracting(false);
-        dragStartRef.current = null;
-        lastPointRef.current = null;
-        commitMaskCanvas();
-      }
-    };
-    window.addEventListener('mouseup', handleGlobalMouseUp);
-    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-  }, [commitMaskCanvas]);
-
-  // Native Non-Passive Wheel Zoom (zooms strictly around cursor)
+  // Smooth Zoom with Ctrl/Wheel lock
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -146,22 +103,17 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       e.stopPropagation();
 
       const rect = container.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
+      const mouseScreenX = e.clientX - rect.left;
+      const mouseScreenY = e.clientY - rect.top;
 
-      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
       const currentScale = scaleRef.current;
-      const newScale = Math.max(0.05, Math.min(25, currentScale * zoomFactor));
-
       const currentPan = panRef.current;
-      const viewCenterX = rect.width / 2 + currentPan.x;
-      const viewCenterY = rect.height / 2 + currentPan.y;
 
-      const dx = mouseX - viewCenterX;
-      const dy = mouseY - viewCenterY;
+      const zoomFactor = e.deltaY < 0 ? 1.14 : 0.88;
+      const newScale = Math.max(0.1, Math.min(16, currentScale * zoomFactor));
 
-      const newPanX = currentPan.x - dx * (newScale / currentScale - 1);
-      const newPanY = currentPan.y - dy * (newScale / currentScale - 1);
+      const newPanX = mouseScreenX - (mouseScreenX - currentPan.x) * (newScale / currentScale);
+      const newPanY = mouseScreenY - (mouseScreenY - currentPan.y) * (newScale / currentScale);
 
       onUpdateView(newScale, { x: newPanX, y: newPanY });
     };
@@ -244,87 +196,97 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
   };
 
-  // 1. Layer A: Pre-render Halftone Texture
+  // Layer 1: Halftone Layer (Re-renders on halftone settings or source change)
   useEffect(() => {
     if (!image || !sourceCanvasRef.current || totalW === 0 || totalH === 0) return;
+
+    const srcCtx = sourceCanvasRef.current.getContext('2d', { willReadFrequently: true });
+    if (!srcCtx) return;
 
     if (!halftoneCanvasRef.current) {
       halftoneCanvasRef.current = document.createElement('canvas');
     }
-    const htCanvas = halftoneCanvasRef.current;
-    htCanvas.width = totalW;
-    htCanvas.height = totalH;
-    const htCtx = htCanvas.getContext('2d', { willReadFrequently: true });
-    const srcCtx = sourceCanvasRef.current.getContext('2d', { willReadFrequently: true });
+    const hCanvas = halftoneCanvasRef.current;
+    hCanvas.width = totalW;
+    hCanvas.height = totalH;
+    const hCtx = hCanvas.getContext('2d');
+    if (!hCtx) return;
 
-    if (!htCtx || !srcCtx) return;
-
-    renderHalftone(srcCtx, htCtx, totalW, totalH, halftone);
+    renderHalftone(srcCtx, hCtx, totalW, totalH, halftone);
     compositeRef.current();
-  }, [image, halftone.mode, halftone.contrast, halftone.dotSize, halftone.invert, pad, totalW, totalH]);
+  }, [image, halftone, totalW, totalH]);
 
-  // 2. Layer B: Pre-render Paper Backing
+  // Layer 2: Paper Backing Layer (Re-renders on tornEdge settings or mask change)
   useEffect(() => {
-    if (!image || !mask || totalW === 0 || totalH === 0 || isInteracting) return;
+    if (!image || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
 
     if (!paperCanvasRef.current) {
       paperCanvasRef.current = document.createElement('canvas');
     }
     const pCanvas = paperCanvasRef.current;
-    pCanvas.width = totalW;
-    pCanvas.height = totalH;
-
-    if (tornEdge.enabled) {
+    if (mask) {
       renderPaperBacking(pCanvas, mask, totalW, totalH, tornEdge);
+      compositeRef.current();
     }
-    compositeRef.current();
-  }, [
-    image, 
-    mask, 
-    tornEdge.enabled, 
-    tornEdge.padding, 
-    tornEdge.roughness, 
-    tornEdge.paperColor, 
-    tornEdge.paperTexture,
-    tornEdge.dropShadow,
-    tornEdge.canvasPadding,
-    pad, 
-    totalW, 
-    totalH, 
-    isInteracting
-  ]);
+  }, [image, mask, tornEdge, totalW, totalH]);
 
-  // Fast 60-FPS Live Preview during Active Brush/Eraser Stroke
+  // Read mask from offscreen canvas and propagate to App state
+  const commitMaskCanvas = useCallback(() => {
+    if (!maskCanvasRef.current || totalW === 0 || totalH === 0) return;
+    const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
+    if (!maskCtx) return;
+
+    const imgData = maskCtx.getImageData(0, 0, totalW, totalH);
+    const data = imgData.data;
+    const newMask = new Uint8ClampedArray(totalW * totalH);
+
+    for (let i = 0; i < totalW * totalH; i++) {
+      newMask[i] = data[i * 4 + 3];
+    }
+    onUpdateMask(newMask);
+  }, [totalW, totalH, onUpdateMask]);
+
+  // Live Stroke Preview for 60 FPS drawing/erasing
   const renderLiveStrokePreview = useCallback(() => {
     if (!displayCanvasRef.current || !halftoneCanvasRef.current || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
     const dispCtx = displayCanvasRef.current.getContext('2d');
     if (!dispCtx) return;
 
     dispCtx.clearRect(0, 0, totalW, totalH);
-    dispCtx.drawImage(halftoneCanvasRef.current, 0, 0);
-    dispCtx.globalCompositeOperation = 'destination-in';
-    dispCtx.drawImage(maskCanvasRef.current, 0, 0);
-    dispCtx.globalCompositeOperation = 'source-over';
-  }, [totalW, totalH]);
 
-  // Convert screen mouse coordinates to image pixel coordinates
+    if (tornEdge.enabled && paperCanvasRef.current) {
+      dispCtx.drawImage(paperCanvasRef.current, 0, 0);
+    }
+
+    dispCtx.save();
+    dispCtx.drawImage(maskCanvasRef.current, 0, 0);
+    dispCtx.globalCompositeOperation = 'source-in';
+    dispCtx.drawImage(halftoneCanvasRef.current, 0, 0);
+    dispCtx.restore();
+  }, [totalW, totalH, tornEdge.enabled]);
+
+  // Screen to Image coordinates conversion
   const screenToImage = useCallback(
     (clientX: number, clientY: number): Point | null => {
-      if (!containerRef.current || !image || totalW === 0 || totalH === 0) return null;
-      const rect = containerRef.current.getBoundingClientRect();
-      const cx = clientX - rect.left;
-      const cy = clientY - rect.top;
+      const container = containerRef.current;
+      if (!container || !image || totalW === 0 || totalH === 0) return null;
 
-      const viewCenterX = rect.width / 2 + pan.x;
-      const viewCenterY = rect.height / 2 + pan.y;
+      const rect = container.getBoundingClientRect();
+      const mouseX = clientY !== undefined ? clientX - rect.left : 0;
+      const mouseY = clientY !== undefined ? clientY - rect.top : 0;
 
-      const imgLeft = viewCenterX - (totalW * scale) / 2;
-      const imgTop = viewCenterY - (totalH * scale) / 2;
+      const stageW = totalW * scale;
+      const stageH = totalH * scale;
+      const stageX = (rect.width - stageW) / 2 + pan.x;
+      const stageY = (rect.height - stageH) / 2 + pan.y;
 
-      const x = (cx - imgLeft) / scale;
-      const y = (cy - imgTop) / scale;
+      const imgX = (mouseX - stageX) / scale;
+      const imgY = (mouseY - stageY) / scale;
 
-      return { x, y };
+      return {
+        x: Math.max(0, Math.min(totalW, Math.round(imgX))),
+        y: Math.max(0, Math.min(totalH, Math.round(imgY))),
+      };
     },
     [image, scale, pan, totalW, totalH]
   );
@@ -396,11 +358,16 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       return;
     }
 
-    if (!image || !maskCanvasRef.current || !pt) return;
+    if (!pt || !maskCanvasRef.current) return;
 
-    if ((activeTool === 'brush' || activeTool === 'eraser') && lastPointRef.current) {
-      const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
-      if (!maskCtx) return;
+    const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
+    if (!maskCtx) return;
+
+    if (activeTool === 'brush' || activeTool === 'eraser') {
+      if (!lastPointRef.current) {
+        lastPointRef.current = pt;
+        return;
+      }
 
       maskCtx.lineCap = 'round';
       maskCtx.lineJoin = 'round';
@@ -410,7 +377,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         maskCtx.globalCompositeOperation = 'destination-out';
       } else {
         maskCtx.globalCompositeOperation = 'source-over';
-        maskCtx.fillStyle = '#ffffff';
         maskCtx.strokeStyle = '#ffffff';
       }
 
@@ -421,55 +387,54 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
       lastPointRef.current = pt;
       renderLiveStrokePreview();
-    } else if (activeTool === 'box-select') {
-      if (boxSelectionRef.current) {
-        const updated = { ...boxSelectionRef.current, x1: pt.x, y1: pt.y };
-        setBoxSelection(updated);
-        boxSelectionRef.current = updated;
-      }
-    } else if (activeTool === 'lasso' || activeTool === 'magic-wand') {
-      const updated = [...freehandPointsRef.current, pt];
-      setFreehandPoints(updated);
-      freehandPointsRef.current = updated;
+    } else if (activeTool === 'box-select' && boxSelectionRef.current) {
+      const updatedBox = { ...boxSelectionRef.current, x1: pt.x, y1: pt.y };
+      setBoxSelection(updatedBox);
+      boxSelectionRef.current = updatedBox;
+    } else if ((activeTool === 'lasso' || activeTool === 'magic-wand') && freehandPointsRef.current.length > 0) {
+      const updatedLasso = [...freehandPointsRef.current, pt];
+      setFreehandPoints(updatedLasso);
+      freehandPointsRef.current = updatedLasso;
     }
   };
 
   // Mouse Up
   const handleMouseUp = (e: React.MouseEvent) => {
-    if (!isInteractingRef.current && !isInteracting) return;
+    if (!isInteractingRef.current) return;
     isInteractingRef.current = false;
     setIsInteracting(false);
     dragStartRef.current = null;
     lastPointRef.current = null;
 
-    if (!image || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
+    if (!maskCanvasRef.current || totalW === 0 || totalH === 0) return;
     const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
     if (!maskCtx) return;
 
-    const curBox = boxSelectionRef.current || boxSelection;
-    const curLasso = freehandPointsRef.current.length > 0 ? freehandPointsRef.current : freehandPoints;
+    const curBox = boxSelectionRef.current;
+    const curLasso = freehandPointsRef.current;
 
     if (activeTool === 'brush' || activeTool === 'eraser') {
       commitMaskCanvas();
     } else if (activeTool === 'box-select' && curBox) {
-      const minX = Math.min(curBox.x0, curBox.x1);
-      const minY = Math.min(curBox.y0, curBox.y1);
+      const x = Math.min(curBox.x0, curBox.x1);
+      const y = Math.min(curBox.y0, curBox.y1);
       const w = Math.abs(curBox.x1 - curBox.x0);
       const h = Math.abs(curBox.y1 - curBox.y0);
 
-      if (w > 4 && h > 4) {
+      if (w > 2 && h > 2) {
         if (e.altKey) {
           maskCtx.globalCompositeOperation = 'destination-out';
-          maskCtx.fillRect(minX, minY, w, h);
+          maskCtx.fillRect(x, y, w, h);
         } else if (e.shiftKey) {
           maskCtx.globalCompositeOperation = 'source-over';
           maskCtx.fillStyle = '#ffffff';
-          maskCtx.fillRect(minX, minY, w, h);
+          maskCtx.fillRect(x, y, w, h);
         } else {
+          // Default: ISOLATE SELECTION
           maskCtx.clearRect(0, 0, totalW, totalH);
           maskCtx.globalCompositeOperation = 'source-over';
           maskCtx.fillStyle = '#ffffff';
-          maskCtx.fillRect(minX, minY, w, h);
+          maskCtx.fillRect(x, y, w, h);
         }
       }
 
@@ -531,44 +496,45 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setFreehandPoints([]);
       freehandPointsRef.current = [];
       commitMaskCanvas();
+    } else {
+      setFreehandPoints([]);
+      freehandPointsRef.current = [];
     }
   };
 
-  // Render Vector Selection Overlay
+  // Overlay Canvas Rendering (Selection outlines, Cursors)
   useEffect(() => {
-    if (!image || !overlayCanvasRef.current || totalW === 0 || totalH === 0) return;
-    const canvas = overlayCanvasRef.current;
-    canvas.width = totalW;
-    canvas.height = totalH;
-    const ctx = canvas.getContext('2d');
+    const overlay = overlayCanvasRef.current;
+    if (!overlay || !image || totalW === 0 || totalH === 0) return;
+
+    overlay.width = totalW;
+    overlay.height = totalH;
+    const ctx = overlay.getContext('2d');
     if (!ctx) return;
 
     ctx.clearRect(0, 0, totalW, totalH);
 
-    if (boxSelection && activeTool === 'box-select') {
+    if (boxSelection) {
+      ctx.save();
       const minX = Math.min(boxSelection.x0, boxSelection.x1);
       const minY = Math.min(boxSelection.y0, boxSelection.y1);
       const w = Math.abs(boxSelection.x1 - boxSelection.x0);
       const h = Math.abs(boxSelection.y1 - boxSelection.y0);
 
-      ctx.save();
-      ctx.strokeStyle = '#6366f1';
-      ctx.lineWidth = 2 / scale;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5 / scale;
       ctx.setLineDash([4 / scale, 4 / scale]);
       ctx.strokeRect(minX, minY, w, h);
-      ctx.fillStyle = 'rgba(99, 102, 241, 0.12)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.fillRect(minX, minY, w, h);
       ctx.restore();
     }
 
     if (freehandPoints.length > 1) {
       ctx.save();
-      const isWand = activeTool === 'magic-wand';
-      ctx.strokeStyle = isWand ? '#f59e0b' : '#38bdf8';
-      ctx.lineWidth = 2.5 / scale;
-      if (isWand) {
-        ctx.setLineDash([5 / scale, 5 / scale]);
-      }
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2 / scale;
+      ctx.setLineDash([4 / scale, 4 / scale]);
       ctx.beginPath();
       ctx.moveTo(freehandPoints[0].x, freehandPoints[0].y);
       for (let i = 1; i < freehandPoints.length; i++) {
@@ -576,8 +542,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       }
       ctx.stroke();
 
-      if (isWand && freehandPoints.length > 3) {
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.12)';
+      if (freehandPoints.length > 3) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.closePath();
         ctx.fill();
       }
@@ -585,10 +551,9 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
   }, [image, boxSelection, freehandPoints, mousePos, activeTool, scale, totalW, totalH]);
 
-  const handleDoubleClick = () => {};
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -598,22 +563,30 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
   };
 
-  const getCanvasBgClass = () => {
+  // Canvas background style mapping
+  const getBgStyle = () => {
     switch (canvasBg) {
-      case 'dark-check':
-        return 'bg-checkerboard';
       case 'light-check':
         return 'bg-checkerboard-light';
       case 'dark-solid':
-        return 'bg-[#181a20]';
+        return 'bg-[#000000]';
       case 'light-solid':
-        return 'bg-[#f4f5f7]';
+        return 'bg-[#ffffff]';
+      case 'dark-check':
       default:
         return 'bg-checkerboard';
     }
   };
 
-  const isPanning = isSpacePressed || activeTool === 'pan';
+  const getCursorStyle = () => {
+    if (isSpacePressed || activeTool === 'pan') {
+      return isInteracting ? 'cursor-grabbing' : 'cursor-grab';
+    }
+    if (activeTool === 'brush' || activeTool === 'eraser') {
+      return 'cursor-crosshair';
+    }
+    return 'cursor-crosshair';
+  };
 
   return (
     <div
@@ -621,118 +594,65 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onDoubleClick={handleDoubleClick}
+      onMouseLeave={() => {
+        isInteractingRef.current = false;
+        setIsInteracting(false);
+        setMousePos(null);
+      }}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className={`relative flex-1 h-full overflow-hidden flex items-center justify-center select-none touch-none ${getCanvasBgClass()} ${
-        isPanning ? (isInteracting ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-crosshair'
-      }`}
+      className={`relative flex-1 h-full overflow-hidden select-none outline-none ${getBgStyle()} ${getCursorStyle()}`}
     >
-      {/* Hidden Offscreen Source Canvas */}
+      {/* Hidden Offscreen Canvases */}
       <canvas ref={sourceCanvasRef} className="hidden" />
 
       {/* Main Interactive Stage */}
-      {image && totalW > 0 && totalH > 0 ? (
+      {image && totalW > 0 && totalH > 0 && (
         <div
+          className="absolute origin-top-left transition-transform ease-out duration-75"
           style={{
-            width: totalW,
-            height: totalH,
+            width: `${totalW}px`,
+            height: `${totalH}px`,
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-            transformOrigin: 'center center',
-            transition: isInteracting ? 'none' : 'transform 0.05s ease-out',
+            left: `calc(50% - ${(totalW * scale) / 2}px)`,
+            top: `calc(50% - ${(totalH * scale) / 2}px)`,
           }}
-          className="relative shadow-2xl"
         >
-          {/* Split Screen Mode */}
-          {showSplitView ? (
-            <div className="relative overflow-hidden w-full h-full">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <img
-                  src={(image as HTMLImageElement).src || ''}
-                  alt="Original"
-                  style={{ width: rawW, height: rawH, left: pad, top: pad }}
-                  className="absolute object-contain pointer-events-none"
-                />
-              </div>
-              <div
-                className="absolute inset-0 overflow-hidden"
-                style={{
-                  clipPath: `polygon(0 0, ${splitPosition * 100}% 0, ${splitPosition * 100}% 100%, 0 100%)`,
-                }}
-              >
-                <canvas ref={displayCanvasRef} className="w-full h-full" />
-              </div>
-              <div
-                style={{ left: `${splitPosition * 100}%` }}
-                className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg pointer-events-none z-20 flex items-center justify-center"
-              >
-                <div className="w-6 h-6 rounded-full bg-slate-900 border-2 border-white text-[10px] text-white flex items-center justify-center font-bold shadow-md">
-                  ||
-                </div>
-              </div>
-            </div>
-          ) : (
-            <canvas
-              ref={displayCanvasRef}
-              className="block pointer-events-none w-full h-full"
-            />
-          )}
-
-          {/* Interactive Selection Overlay */}
+          {/* Display Rendered Canvas */}
           <canvas
-            ref={overlayCanvasRef}
-            className="absolute inset-0 pointer-events-none z-10 w-full h-full"
+            ref={displayCanvasRef}
+            width={totalW}
+            height={totalH}
+            className="absolute top-0 left-0 w-full h-full pointer-events-none"
           />
 
-          {/* High-Visibility Brush & Eraser Circle Cursor */}
-          {mousePos && (activeTool === 'brush' || activeTool === 'eraser') && !isPanning && (
-            <div
-              style={{
-                left: mousePos.x,
-                top: mousePos.y,
-                width: brushSize * 2,
-                height: brushSize * 2,
-                transform: 'translate(-50%, -50%)',
-                borderWidth: `${Math.max(1, 1.5 / scale)}px`,
-              }}
-              className={`absolute rounded-full pointer-events-none flex items-center justify-center shadow-sm ${
-                activeTool === 'eraser'
-                  ? 'border-rose-400 bg-rose-500/20 ring-1 ring-rose-500/40'
-                  : 'border-emerald-400 bg-emerald-500/20 ring-1 ring-emerald-500/40'
-              }`}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${activeTool === 'eraser' ? 'bg-rose-400' : 'bg-emerald-400'}`} />
-            </div>
-          )}
+          {/* Interactive Selection Overlay Canvas */}
+          <canvas
+            ref={overlayCanvasRef}
+            width={totalW}
+            height={totalH}
+            className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
+          />
         </div>
-      ) : (
-        /* Empty State */
-        <div className="flex flex-col items-center justify-center p-8 max-w-md text-center bg-[#151922]/90 border border-slate-800/80 rounded-3xl backdrop-blur-xl shadow-2xl">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600/20 to-sky-400/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4 shadow-inner">
-            <svg
-              className="w-8 h-8"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.75"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
+      )}
 
-          <h3 className="text-base font-semibold text-slate-100 mb-1.5">
-            Перетягніть будь-яке фото сюди
-          </h3>
-          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-            Підтримуються PNG, JPG, WebP або швидка вставка через <span className="font-mono text-slate-300 bg-slate-800 px-1 py-0.5 rounded">Ctrl + V</span>
-          </p>
+      {/* Empty State Upload Dropzone */}
+      {!image && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center font-mono">
+          <div className="max-w-md w-full p-8 rounded border border-[#262626] bg-[#0a0a0a] shadow-2xl flex flex-col items-center gap-4">
+            <div className="w-12 h-12 rounded bg-[#141414] border border-[#262626] flex items-center justify-center text-white font-bold text-sm">
+              IA
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white mb-1">
+                Перетягніть фото сюди або вставте з буфера (Ctrl+V)
+              </h3>
+              <p className="text-xs text-neutral-400">
+                Підтримуються будь-які PNG, JPG, WebP або мобільні фотографії
+              </p>
+            </div>
 
-          <div className="flex items-center gap-3 w-full">
-            <label className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs text-center cursor-pointer transition shadow-lg shadow-indigo-600/20">
+            <label className="py-2 px-4 rounded bg-white text-black font-semibold text-xs transition cursor-pointer hover:bg-neutral-200">
               <span>Обрати файл з диска</span>
               <input
                 type="file"
@@ -746,23 +666,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
               />
             </label>
           </div>
-        </div>
-      )}
-
-      {/* Floating Split Slider */}
-      {showSplitView && image && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 border border-slate-800 backdrop-blur-md px-4 py-2 rounded-2xl flex items-center gap-3 shadow-2xl z-30">
-          <span className="text-xs font-medium text-slate-300">До (Оригінал)</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={splitPosition}
-            onChange={(e) => setSplitPosition(Number(e.target.value))}
-            className="w-40 accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded"
-          />
-          <span className="text-xs font-medium text-indigo-400">Після (Асет)</span>
         </div>
       )}
     </div>

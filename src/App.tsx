@@ -42,7 +42,6 @@ export const App: React.FC = () => {
   const [wandTolerance, setWandTolerance] = useState<number>(24);
 
   const [canvasBg, setCanvasBg] = useState<'dark-check' | 'light-check' | 'dark-solid' | 'light-solid'>('dark-check');
-  const [showSplitView, setShowSplitView] = useState<boolean>(false);
 
   const [scale, setScale] = useState<number>(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
@@ -449,7 +448,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0d1017] text-slate-100 overflow-hidden font-sans select-none">
+    <div className="flex flex-col h-screen w-screen bg-[#000000] text-[#d4d4d4] overflow-hidden font-mono select-none">
       {/* Hidden File Input */}
       <input
         ref={fileInputRef}
@@ -472,8 +471,6 @@ export const App: React.FC = () => {
         canRedo={redoStack.length > 0}
         onCopyToClipboard={handleCopyToClipboard}
         onDownload={handleDownload}
-        showSplitView={showSplitView}
-        onToggleSplitView={() => setShowSplitView(!showSplitView)}
         onResetZoom={handleResetZoom}
         hasImage={image !== null}
       />
@@ -505,7 +502,6 @@ export const App: React.FC = () => {
           halftone={halftone}
           tornEdge={tornEdge}
           canvasBg={canvasBg}
-          showSplitView={showSplitView}
           onDropFile={handleFile}
           scale={scale}
           pan={pan}

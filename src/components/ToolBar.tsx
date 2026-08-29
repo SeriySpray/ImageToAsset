@@ -35,8 +35,8 @@ export const ToolBar: React.FC<ToolBarProps> = ({
   onFillAllMask,
   hasImage,
 }) => {
-  const tools: { id: ToolType; name: string; icon: React.ReactNode; shortcut: string; highlight?: boolean }[] = [
-    { id: 'magic-wand', name: 'Магічне ласо / Авто-вирізання (W)', icon: <Wand2 className="w-4 h-4" />, shortcut: 'W', highlight: true },
+  const tools: { id: ToolType; name: string; icon: React.ReactNode; shortcut: string }[] = [
+    { id: 'magic-wand', name: 'Магічне ласо / Авто-вирізання (W)', icon: <Wand2 className="w-4 h-4" />, shortcut: 'W' },
     { id: 'brush', name: 'Пензель маски (B)', icon: <Paintbrush className="w-4 h-4" />, shortcut: 'B' },
     { id: 'eraser', name: 'Ластик маски (E)', icon: <Eraser className="w-4 h-4" />, shortcut: 'E' },
     { id: 'box-select', name: 'Виділення прямокутником (M)', icon: <Square className="w-4 h-4" />, shortcut: 'M' },
@@ -47,9 +47,9 @@ export const ToolBar: React.FC<ToolBarProps> = ({
   if (!hasImage) return null;
 
   return (
-    <aside className="w-14 border-r border-slate-800/80 bg-[#12151e]/90 backdrop-blur-md flex flex-col items-center py-3 justify-between z-20 select-none">
+    <aside className="w-13 border-r border-[#262626] bg-[#0a0a0a] flex flex-col items-center py-3 justify-between z-20 select-none font-mono">
       {/* Primary Selection Tools */}
-      <div className="flex flex-col items-center gap-1.5 w-full px-2">
+      <div className="flex flex-col items-center gap-1.5 w-full px-1.5">
         {tools.map((tool) => {
           const isActive = activeTool === tool.id;
           return (
@@ -57,20 +57,16 @@ export const ToolBar: React.FC<ToolBarProps> = ({
               key={tool.id}
               onClick={() => onSelectTool(tool.id)}
               title={`${tool.name}`}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition relative group cursor-pointer ${
+              className={`w-9 h-9 rounded flex items-center justify-center transition relative group cursor-pointer ${
                 isActive
-                  ? tool.highlight
-                    ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30'
-                    : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                  : tool.highlight
-                  ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 hover:text-amber-300'
-                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80'
+                  ? 'bg-white text-black font-bold shadow-none'
+                  : 'text-neutral-400 hover:text-white hover:bg-[#181818]'
               }`}
             >
               {tool.icon}
 
               {/* Tooltip */}
-              <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-md whitespace-nowrap shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
+              <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-neutral-200 text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
                 {tool.name}
               </div>
             </button>
@@ -79,11 +75,11 @@ export const ToolBar: React.FC<ToolBarProps> = ({
       </div>
 
       {/* Secondary Quick Operations */}
-      <div className="flex flex-col items-center gap-2 w-full px-2 pt-3 border-t border-slate-800/80">
+      <div className="flex flex-col items-center gap-2 w-full px-1.5 pt-3 border-t border-[#262626]">
         {/* Brush Size Indicator */}
         {(activeTool === 'brush' || activeTool === 'eraser') && (
           <div className="flex flex-col items-center gap-1 w-full mb-1">
-            <span className="text-[10px] font-mono text-slate-400">{brushSize}px</span>
+            <span className="text-[9px] font-mono text-neutral-400">{brushSize}px</span>
             <input
               type="range"
               min="4"
@@ -91,7 +87,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
               value={brushSize}
               onChange={(e) => onChangeBrushSize(Number(e.target.value))}
               title="Розмір пензля ([ / ])"
-              className="w-8 accent-indigo-500 cursor-pointer h-1 bg-slate-800 rounded"
+              className="w-7 accent-white cursor-pointer h-1 bg-[#262626] rounded"
             />
           </div>
         )}
@@ -100,10 +96,10 @@ export const ToolBar: React.FC<ToolBarProps> = ({
         <button
           onClick={onFillAllMask}
           title="Виділити все полотно"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 transition relative group cursor-pointer"
+          className="w-8 h-8 rounded flex items-center justify-center text-neutral-400 hover:text-white hover:bg-[#181818] transition relative group cursor-pointer"
         >
-          <Maximize className="w-4 h-4" />
-          <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-md whitespace-nowrap shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
+          <Maximize className="w-3.5 h-3.5" />
+          <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-neutral-200 text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
             Виділити все
           </div>
         </button>
@@ -112,10 +108,10 @@ export const ToolBar: React.FC<ToolBarProps> = ({
         <button
           onClick={onInvertMask}
           title="Інвертувати маску"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 transition relative group cursor-pointer"
+          className="w-8 h-8 rounded flex items-center justify-center text-neutral-400 hover:text-white hover:bg-[#181818] transition relative group cursor-pointer"
         >
-          <FlipHorizontal className="w-4 h-4" />
-          <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-md whitespace-nowrap shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
+          <FlipHorizontal className="w-3.5 h-3.5" />
+          <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-neutral-200 text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
             Інвертувати маску
           </div>
         </button>
@@ -124,10 +120,10 @@ export const ToolBar: React.FC<ToolBarProps> = ({
         <button
           onClick={onClearMask}
           title="Очистити всю маску"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 transition relative group cursor-pointer"
+          className="w-8 h-8 rounded flex items-center justify-center text-neutral-400 hover:text-white hover:bg-[#181818] transition relative group cursor-pointer"
         >
-          <Trash2 className="w-4 h-4" />
-          <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-rose-300 text-xs rounded-md whitespace-nowrap shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
+          <Trash2 className="w-3.5 h-3.5" />
+          <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-white text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
             Очистити все
           </div>
         </button>

@@ -4,10 +4,10 @@ import {
   Scissors, 
   CircleDot, 
   Activity, 
-  Contrast,
-  Eye,
-  Layers,
-  Image as ImageIcon,
+  Contrast, 
+  Eye, 
+  Layers, 
+  Image as ImageIcon 
 } from 'lucide-react';
 import { HalftoneSettings, TornEdgeSettings, GraphicMode } from '../types';
 
@@ -41,36 +41,36 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const paperColors = [
     { name: 'Pure White', value: '#ffffff' },
-    { name: 'Warm Cream', value: '#fcf8f2' },
-    { name: 'Craft Paper', value: '#e8dcce' },
-    { name: 'Dark Ink', value: '#12141c' },
+    { name: 'Off-White', value: '#f4f4f4' },
+    { name: 'Light Gray', value: '#d4d4d4' },
+    { name: 'Dark Ink', value: '#121212' },
   ];
 
   const showDotSize = halftone.mode !== 'grayscale-contrast';
 
   return (
-    <aside className="w-76 border-l border-slate-800/80 bg-[#12151e]/95 backdrop-blur-md flex flex-col h-full overflow-y-auto z-20 select-none">
+    <aside className="w-72 border-l border-[#262626] bg-[#0a0a0a] flex flex-col h-full overflow-y-auto z-20 select-none font-mono text-xs">
       {/* 1. Graphic Style & Tone */}
-      <div className="p-4 border-b border-slate-800/80">
+      <div className="p-4 border-b border-[#262626]">
         <div className="flex items-center gap-2 mb-3">
-          <Sliders className="w-4 h-4 text-indigo-400" />
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-200">
+          <Sliders className="w-3.5 h-3.5 text-white" />
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-300">
             Стиль та тональність
           </h2>
         </div>
 
         {/* Mode Grid */}
-        <div className="grid grid-cols-2 gap-1.5 mb-4 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
+        <div className="grid grid-cols-2 gap-1.5 mb-4 bg-[#121212] p-1.5 rounded border border-[#262626]">
           {modes.map((m) => {
             const active = halftone.mode === m.id;
             return (
               <button
                 key={m.id}
                 onClick={() => onChangeHalftone({ mode: m.id })}
-                className={`flex items-center justify-start gap-1.5 py-2 px-2.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                className={`flex items-center justify-start gap-1.5 py-1.5 px-2 rounded text-[11px] font-medium transition cursor-pointer ${
                   active
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                    ? 'bg-white text-black font-semibold'
+                    : 'text-neutral-400 hover:text-white hover:bg-[#1c1c1c]'
                 }`}
               >
                 {m.icon}
@@ -81,15 +81,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         {/* Essential Sliders */}
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {/* Master Smart Contrast */}
           <div>
-            <div className="flex justify-between text-xs mb-1.5">
-              <span className="text-slate-300 flex items-center gap-1.5 font-medium">
-                <Contrast className="w-3.5 h-3.5 text-indigo-400" />
+            <div className="flex justify-between text-[11px] mb-1.5">
+              <span className="text-neutral-300 flex items-center gap-1.5 font-medium">
+                <Contrast className="w-3 h-3 text-neutral-400" />
                 Контрастність
               </span>
-              <span className="font-mono text-indigo-400 font-bold">{halftone.contrast}%</span>
+              <span className="font-mono text-white font-bold">{halftone.contrast}%</span>
             </div>
             <input
               type="range"
@@ -97,19 +97,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               max="100"
               value={halftone.contrast}
               onChange={(e) => onChangeHalftone({ contrast: Number(e.target.value) })}
-              className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+              className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
             />
           </div>
 
           {/* Dot Size (Only when raster is active) */}
           {showDotSize && (
             <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-slate-300 flex items-center gap-1.5 font-medium">
-                  <CircleDot className="w-3.5 h-3.5 text-indigo-400" />
+              <div className="flex justify-between text-[11px] mb-1.5">
+                <span className="text-neutral-300 flex items-center gap-1.5 font-medium">
+                  <CircleDot className="w-3 h-3 text-neutral-400" />
                   Розмір елемента растру
                 </span>
-                <span className="font-mono text-indigo-400 font-bold">{halftone.dotSize}px</span>
+                <span className="font-mono text-white font-bold">{halftone.dotSize}px</span>
               </div>
               <input
                 type="range"
@@ -118,23 +118,23 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 step="0.5"
                 value={halftone.dotSize}
                 onChange={(e) => onChangeHalftone({ dotSize: Number(e.target.value) })}
-                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
               />
             </div>
           )}
 
           {/* Invert */}
           <div className="flex items-center justify-between pt-1">
-            <span className="text-xs text-slate-300 font-medium">Інвертувати кольори (Негатив)</span>
+            <span className="text-[11px] text-neutral-300 font-medium">Інвертувати кольори</span>
             <button
               onClick={() => onChangeHalftone({ invert: !halftone.invert })}
-              className={`w-9 h-5 rounded-full transition relative p-0.5 cursor-pointer ${
-                halftone.invert ? 'bg-indigo-600' : 'bg-slate-800'
+              className={`w-8 h-4 rounded-full transition relative p-0.5 cursor-pointer ${
+                halftone.invert ? 'bg-white' : 'bg-[#262626]'
               }`}
             >
               <div
-                className={`w-4 h-4 rounded-full bg-white transition transform ${
-                  halftone.invert ? 'translate-x-4' : 'translate-x-0'
+                className={`w-3 h-3 rounded-full transition transform ${
+                  halftone.invert ? 'bg-black translate-x-4' : 'bg-neutral-400 translate-x-0'
                 }`}
               />
             </button>
@@ -143,35 +143,35 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       </div>
 
       {/* 2. Torn Paper Sticker Border */}
-      <div className="p-4 border-b border-slate-800/80">
+      <div className="p-4 border-b border-[#262626]">
         <div className="flex items-center justify-between mb-3.5">
           <div className="flex items-center gap-2">
-            <Scissors className="w-4 h-4 text-sky-400" />
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-200">
+            <Scissors className="w-3.5 h-3.5 text-white" />
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-300">
               Рваний контур наклейки
             </h2>
           </div>
           <button
             onClick={() => onChangeTornEdge({ enabled: !tornEdge.enabled })}
-            className={`w-9 h-5 rounded-full transition relative p-0.5 cursor-pointer ${
-              tornEdge.enabled ? 'bg-sky-500' : 'bg-slate-800'
+            className={`w-8 h-4 rounded-full transition relative p-0.5 cursor-pointer ${
+              tornEdge.enabled ? 'bg-white' : 'bg-[#262626]'
             }`}
           >
             <div
-              className={`w-4 h-4 rounded-full bg-white transition transform ${
-                tornEdge.enabled ? 'translate-x-4' : 'translate-x-0'
+              className={`w-3 h-3 rounded-full transition transform ${
+                tornEdge.enabled ? 'bg-black translate-x-4' : 'bg-neutral-400 translate-x-0'
               }`}
             />
           </button>
         </div>
 
         {tornEdge.enabled && (
-          <div className="space-y-4">
+          <div className="space-y-3.5">
             {/* Border Width */}
             <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-slate-300 font-medium">Ширина білої обвідки</span>
-                <span className="font-mono text-sky-400 font-bold">{tornEdge.padding}px</span>
+              <div className="flex justify-between text-[11px] mb-1.5">
+                <span className="text-neutral-300 font-medium">Ширина білої обвідки</span>
+                <span className="font-mono text-white font-bold">{tornEdge.padding}px</span>
               </div>
               <input
                 type="range"
@@ -179,15 +179,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 max="60"
                 value={tornEdge.padding}
                 onChange={(e) => onChangeTornEdge({ padding: Number(e.target.value) })}
-                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
               />
             </div>
 
             {/* Roughness */}
             <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-slate-300 font-medium">Ступінь «рваності» краю</span>
-                <span className="font-mono text-sky-400 font-bold">{tornEdge.roughness}px</span>
+              <div className="flex justify-between text-[11px] mb-1.5">
+                <span className="text-neutral-300 font-medium">Ступінь «рваності» краю</span>
+                <span className="font-mono text-white font-bold">{tornEdge.roughness}px</span>
               </div>
               <input
                 type="range"
@@ -195,24 +195,24 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 max="30"
                 value={tornEdge.roughness}
                 onChange={(e) => onChangeTornEdge({ roughness: Number(e.target.value) })}
-                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
               />
             </div>
 
             {/* Paper Color */}
             <div>
-              <label className="text-[11px] font-medium text-slate-400 mb-1.5 block">
-                Колір підкладки наклейки
+              <label className="text-[10px] font-medium text-neutral-400 mb-1.5 block uppercase tracking-wider">
+                Колір підкладки
               </label>
               <div className="grid grid-cols-4 gap-1.5">
                 {paperColors.map((c) => (
                   <button
                     key={c.value}
                     onClick={() => onChangeTornEdge({ paperColor: c.value })}
-                    className={`h-7 rounded-lg border flex items-center justify-center transition cursor-pointer ${
+                    className={`h-6 rounded border flex items-center justify-center transition cursor-pointer ${
                       tornEdge.paperColor.toLowerCase() === c.value.toLowerCase()
-                        ? 'border-sky-400 ring-2 ring-sky-400/30'
-                        : 'border-slate-700 hover:border-slate-500'
+                        ? 'border-white ring-1 ring-white'
+                        : 'border-[#262626] hover:border-[#555555]'
                     }`}
                     style={{ backgroundColor: c.value }}
                     title={c.name}
@@ -227,8 +227,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       {/* 3. Preview Background */}
       <div className="p-4 mt-auto">
         <div className="flex items-center gap-2 mb-2.5">
-          <Eye className="w-4 h-4 text-slate-400" />
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <Eye className="w-3.5 h-3.5 text-neutral-400" />
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             Фон полотна
           </h2>
         </div>
@@ -236,43 +236,43 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="grid grid-cols-2 gap-1.5">
           <button
             onClick={() => onChangeCanvasBg('dark-check')}
-            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition cursor-pointer ${
+            className={`py-1.5 px-2 rounded text-[11px] font-medium border text-center transition cursor-pointer ${
               canvasBg === 'dark-check'
-                ? 'bg-slate-800 text-slate-100 border-indigo-500/80 shadow-sm'
-                : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                ? 'bg-[#1e1e1e] text-white border-white'
+                : 'bg-[#121212] text-neutral-400 border-[#262626] hover:text-white'
             }`}
           >
             Темна сітка
           </button>
           <button
             onClick={() => onChangeCanvasBg('light-check')}
-            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition cursor-pointer ${
+            className={`py-1.5 px-2 rounded text-[11px] font-medium border text-center transition cursor-pointer ${
               canvasBg === 'light-check'
-                ? 'bg-slate-800 text-slate-100 border-indigo-500/80 shadow-sm'
-                : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                ? 'bg-[#1e1e1e] text-white border-white'
+                : 'bg-[#121212] text-neutral-400 border-[#262626] hover:text-white'
             }`}
           >
             Світла сітка
           </button>
           <button
             onClick={() => onChangeCanvasBg('dark-solid')}
-            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition cursor-pointer ${
+            className={`py-1.5 px-2 rounded text-[11px] font-medium border text-center transition cursor-pointer ${
               canvasBg === 'dark-solid'
-                ? 'bg-slate-800 text-slate-100 border-indigo-500/80 shadow-sm'
-                : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                ? 'bg-[#1e1e1e] text-white border-white'
+                : 'bg-[#121212] text-neutral-400 border-[#262626] hover:text-white'
             }`}
           >
-            Слайд (Темний)
+            Чорний
           </button>
           <button
             onClick={() => onChangeCanvasBg('light-solid')}
-            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition cursor-pointer ${
+            className={`py-1.5 px-2 rounded text-[11px] font-medium border text-center transition cursor-pointer ${
               canvasBg === 'light-solid'
-                ? 'bg-slate-800 text-slate-100 border-indigo-500/80 shadow-sm'
-                : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                ? 'bg-[#1e1e1e] text-white border-white'
+                : 'bg-[#121212] text-neutral-400 border-[#262626] hover:text-white'
             }`}
           >
-            Слайд (Світлий)
+            Білий
           </button>
         </div>
       </div>

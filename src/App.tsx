@@ -53,16 +53,37 @@ export const App: React.FC = () => {
   const totalW = rawW > 0 ? rawW + pad * 2 : 0;
   const totalH = rawH > 0 ? rawH + pad * 2 : 0;
 
-  // Initialize mask with buffer margin around image
-  const initializePaddedMask = useCallback((width: number, height: number, padding: number) => {
+  // Initialize mask from image, automatically extracting alpha transparency from PNG/WebP files
+  const initializePaddedMask = useCallback((source: HTMLImageElement | HTMLCanvasElement, width: number, height: number, padding: number) => {
     const totalWidth = width + padding * 2;
     const totalHeight = height + padding * 2;
     const newMask = new Uint8ClampedArray(totalWidth * totalHeight);
 
-    for (let y = padding; y < padding + height; y++) {
-      const rowOffset = y * totalWidth;
-      for (let x = padding; x < padding + width; x++) {
-        newMask[rowOffset + x] = 255;
+    // Extract alpha channel directly from the input source image
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    const ctx = tempCanvas.getContext('2d', { willReadFrequently: true });
+    if (ctx) {
+      ctx.drawImage(source, 0, 0, width, height);
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+
+      for (let y = 0; y < height; y++) {
+        const rowOffset = (y + padding) * totalWidth;
+        const srcRowOffset = y * width;
+        for (let x = 0; x < width; x++) {
+          const alpha = data[(srcRowOffset + x) * 4 + 3];
+          // If pixel has alpha in source PNG (> 10), mark as selected, otherwise keep 0 (transparent cutout)
+          newMask[rowOffset + (x + padding)] = alpha > 10 ? alpha : 0;
+        }
+      }
+    } else {
+      for (let y = padding; y < padding + height; y++) {
+        const rowOffset = y * totalWidth;
+        for (let x = padding; x < padding + width; x++) {
+          newMask[rowOffset + x] = 255;
+        }
       }
     }
     return newMask;
@@ -130,7 +151,7 @@ export const App: React.FC = () => {
 
     setImage(targetSource);
 
-    const initialMask = initializePaddedMask(workW, workH, currentPad);
+    const initialMask = initializePaddedMask(targetSource, workW, workH, currentPad);
 
     setMask(initialMask);
     setUndoStack([]);
@@ -351,7 +372,7 @@ export const App: React.FC = () => {
 
   const handleFillAllMask = () => {
     if (!image || totalW === 0 || totalH === 0) return;
-    handleUpdateMask(initializePaddedMask(rawW, rawH, pad));
+    handleUpdateMask(initializePaddedMask(image, rawW, rawH, pad));
   };
 
   // Direct Transparent PNG Export Engine (Sticker + Border + Shadow without background)

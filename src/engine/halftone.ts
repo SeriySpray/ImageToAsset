@@ -69,7 +69,7 @@ export function renderHalftone(
     const a = srcPixels[idx + 3];
 
     if (a < 5) {
-      grayPixels32[i] = 0xFFFFFFFF; // Pure white
+      grayPixels32[i] = 0x00000000; // Transparent
       lumBytes[i] = 255;
       continue;
     }
@@ -117,6 +117,13 @@ export function renderHalftone(
       const rowOffset = y * width;
       for (let x = 0; x < width; x++) {
         const i = rowOffset + x;
+
+        // Keep transparent pixels transparent without creating dots or background
+        if (srcPixels[i * 4 + 3] < 5) {
+          patternPixels32[i] = 0x00000000;
+          continue;
+        }
+
         const sampleVal = lumBytes[i];
         const darkness = invert ? sampleVal / 255 : (255 - sampleVal) / 255;
 
@@ -252,6 +259,10 @@ export function renderHalftone(
       }
       htCtx.stroke();
     }
+
+    // Clip engraving to source transparency
+    htCtx.globalCompositeOperation = 'destination-in';
+    htCtx.drawImage(sourceCtx.canvas, 0, 0);
 
     targetCtx.drawImage(htPatternCanvas, 0, 0);
     const t1 = performance.now();

@@ -7,7 +7,8 @@ import {
   Contrast, 
   Eye, 
   Layers, 
-  Image as ImageIcon 
+  Image as ImageIcon,
+  X
 } from 'lucide-react';
 import { HalftoneSettings, TornEdgeSettings, GraphicMode } from '../types';
 
@@ -20,6 +21,8 @@ interface SettingsPanelProps {
   canvasBg: 'dark-check' | 'light-check' | 'dark-solid' | 'light-solid';
   onChangeCanvasBg: (bg: 'dark-check' | 'light-check' | 'dark-solid' | 'light-solid') => void;
   hasImage: boolean;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -31,6 +34,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   canvasBg,
   onChangeCanvasBg,
   hasImage,
+  isOpen = false,
+  onClose,
 }) => {
   if (!hasImage) return null;
 
@@ -52,12 +57,41 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const showDotSize = halftone.mode !== 'grayscale-contrast';
 
   return (
-    <aside className="w-72 border-l border-[#262626] bg-[#0a0a0a] flex flex-col h-full overflow-y-auto z-20 select-none font-mono text-xs">
-      {/* 1. Graphic Style & Tone */}
-      <div className="p-4 border-b border-[#262626]">
-        <div className="flex items-center gap-2 mb-3">
-          <Sliders className="w-3.5 h-3.5 text-white" />
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-300">
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {isOpen && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 lg:hidden transition-opacity"
+        />
+      )}
+
+      {/* Main Settings Panel: Desktop Sidebar + Mobile Slide-Over Drawer */}
+      <aside
+        className={`${
+          isOpen ? 'fixed inset-y-0 right-0 z-50 flex' : 'hidden lg:flex'
+        } w-80 max-w-[88vw] lg:w-72 lg:static border-l border-[#262626] bg-[#0a0a0a] flex-col h-full overflow-y-auto z-20 select-none font-mono text-xs shadow-2xl lg:shadow-none`}
+      >
+        {/* Mobile Header with Close Button */}
+        <div className="lg:hidden p-4 border-b border-[#262626] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-white" />
+            <span className="font-semibold text-xs text-white uppercase tracking-wider">Налаштування</span>
+          </div>
+          <button
+            onClick={onClose}
+            title="Закрити налаштування"
+            className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#1f1f1f] transition cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* 1. Graphic Style & Tone */}
+        <div className="p-4 border-b border-[#262626]">
+          <div className="flex items-center gap-2 mb-3">
+            <Sliders className="w-3.5 h-3.5 text-white" />
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-300">
             Стиль та тональність
           </h2>
         </div>
@@ -356,5 +390,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
       </div>
     </aside>
-  );
+  </>
+);
 };

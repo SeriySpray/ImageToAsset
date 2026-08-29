@@ -468,7 +468,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   };
 
   // Mouse Up
-  const handleMouseUp = (e: React.MouseEvent) => {
+  const handleMouseUp = (e?: React.MouseEvent | React.TouchEvent | { altKey?: boolean; shiftKey?: boolean }) => {
     if (!isInteractingRef.current) return;
     isInteractingRef.current = false;
     setIsInteracting(false);
@@ -481,6 +481,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
     const curBox = boxSelectionRef.current;
     const curLasso = freehandPointsRef.current;
+    const isAlt = e ? ('altKey' in e ? !!e.altKey : false) : false;
+    const isShift = e ? ('shiftKey' in e ? !!e.shiftKey : false) : false;
 
     if (activeTool === 'brush' || activeTool === 'eraser') {
       commitMaskCanvas();
@@ -492,10 +494,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       const h = Math.abs(curBox.y1 - curBox.y0);
 
       if (w > 2 && h > 2) {
-        if (e.altKey) {
+        if (isAlt) {
           maskCtx.globalCompositeOperation = 'destination-out';
           maskCtx.fillRect(x, y, w, h);
-        } else if (e.shiftKey) {
+        } else if (isShift) {
           maskCtx.globalCompositeOperation = 'source-over';
           maskCtx.fillStyle = '#ffffff';
           maskCtx.fillRect(x, y, w, h);
@@ -514,11 +516,13 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       drawOverlay(mouseScreenPosRef.current);
     } else if (activeTool === 'magic-wand' && curLasso.length > 0 && sourceCanvasRef.current) {
       // Intelligent Smart Lasso Object Cutout
-      const mode = e.altKey ? 'subtract' : (e.shiftKey ? 'add' : 'replace');
+      const mode = isAlt ? 'subtract' : (isShift ? 'add' : 'replace');
       const targetMask = mask ? new Uint8ClampedArray(mask) : new Uint8ClampedArray(totalW * totalH);
+      const srcCtx = sourceCanvasRef.current.getContext('2d', { willReadFrequently: true });
+      if (!srcCtx) return;
 
       smartLassoCutout(
-        sourceCanvasRef.current.getContext('2d')!,
+        srcCtx,
         targetMask,
         totalW,
         totalH,
@@ -527,43 +531,41 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         mask
       );
 
+      const imgData = maskCtx.createImageData(totalW, totalH);
+      for (let i = 0; i < totalW * totalH; i++) {
+        const v = targetMask[i];
+        const idx = i * 4;
+        imgData.data[idx] = 255;
+        imgData.data[idx + 1] = 255;
+        imgData.data[idx + 2] = 255;
+        imgData.data[idx + 3] = v;
+      }
+      maskCtx.putImageData(imgData, 0, 0);
+
       setFreehandPoints([]);
       freehandPointsRef.current = [];
-      onUpdateMask(targetMask);
+      commitMaskCanvas();
       drawOverlay(mouseScreenPosRef.current);
     } else if (activeTool === 'lasso' && curLasso.length > 2) {
-      if (e.altKey) {
+      if (isAlt) {
         maskCtx.globalCompositeOperation = 'destination-out';
-        maskCtx.beginPath();
-        maskCtx.moveTo(curLasso[0].x, curLasso[0].y);
-        for (let i = 1; i < curLasso.length; i++) {
-          maskCtx.lineTo(curLasso[i].x, curLasso[i].y);
-        }
-        maskCtx.closePath();
-        maskCtx.fill();
-      } else if (e.shiftKey) {
+      } else if (isShift) {
         maskCtx.globalCompositeOperation = 'source-over';
         maskCtx.fillStyle = '#ffffff';
-        maskCtx.beginPath();
-        maskCtx.moveTo(curLasso[0].x, curLasso[0].y);
-        for (let i = 1; i < curLasso.length; i++) {
-          maskCtx.lineTo(curLasso[i].x, curLasso[i].y);
-        }
-        maskCtx.closePath();
-        maskCtx.fill();
       } else {
         // Default: ISOLATE SELECTION
         maskCtx.clearRect(0, 0, totalW, totalH);
         maskCtx.globalCompositeOperation = 'source-over';
         maskCtx.fillStyle = '#ffffff';
-        maskCtx.beginPath();
-        maskCtx.moveTo(curLasso[0].x, curLasso[0].y);
-        for (let i = 1; i < curLasso.length; i++) {
-          maskCtx.lineTo(curLasso[i].x, curLasso[i].y);
-        }
-        maskCtx.closePath();
-        maskCtx.fill();
       }
+
+      maskCtx.beginPath();
+      maskCtx.moveTo(curLasso[0].x, curLasso[0].y);
+      for (let i = 1; i < curLasso.length; i++) {
+        maskCtx.lineTo(curLasso[i].x, curLasso[i].y);
+      }
+      maskCtx.closePath();
+      maskCtx.fill();
 
       setFreehandPoints([]);
       freehandPointsRef.current = [];
@@ -573,6 +575,169 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setFreehandPoints([]);
       freehandPointsRef.current = [];
       drawOverlay(mouseScreenPosRef.current);
+    }
+  };
+
+  // Touch Gesture Handling (Single touch drawing/selecting + Two-finger pinch zoom/pan)
+  const touchStartDistRef = useRef<number | null>(null);
+  const touchStartScaleRef = useRef<number>(1);
+  const touchStartPanRef = useRef<Point>({ x: 0, y: 0 });
+  const touchStartMidRef = useRef<Point>({ x: 0, y: 0 });
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!image || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
+
+    if (e.touches.length === 2) {
+      // 2 fingers pinch zoom & pan
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      touchStartDistRef.current = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      touchStartScaleRef.current = scaleRef.current;
+      touchStartPanRef.current = { ...panRef.current };
+      touchStartMidRef.current = {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+      };
+      isInteractingRef.current = false;
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      if (activeTool === 'pan') {
+        isInteractingRef.current = true;
+        setIsInteracting(true);
+        dragStartRef.current = { x: touch.clientX - pan.x, y: touch.clientY - pan.y };
+        return;
+      }
+
+      const pt = screenToImage(touch.clientX, touch.clientY);
+      if (!pt) return;
+
+      const container = containerRef.current;
+      const sPt = container
+        ? { x: touch.clientX - container.getBoundingClientRect().left, y: touch.clientY - container.getBoundingClientRect().top }
+        : null;
+
+      isInteractingRef.current = true;
+      setIsInteracting(true);
+      lastPointRef.current = pt;
+      mousePosRef.current = pt;
+      mouseScreenPosRef.current = sPt;
+
+      if (activeTool === 'brush' || activeTool === 'eraser') {
+        const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
+        if (maskCtx) {
+          maskCtx.lineWidth = brushSize;
+          maskCtx.lineCap = 'round';
+          maskCtx.lineJoin = 'round';
+          if (activeTool === 'eraser') {
+            maskCtx.globalCompositeOperation = 'destination-out';
+            maskCtx.strokeStyle = 'rgba(0,0,0,1)';
+          } else {
+            maskCtx.globalCompositeOperation = 'source-over';
+            maskCtx.strokeStyle = '#ffffff';
+          }
+          maskCtx.beginPath();
+          maskCtx.arc(pt.x, pt.y, brushSize / 2, 0, Math.PI * 2);
+          maskCtx.fill();
+        }
+        renderLiveStrokePreview();
+      } else if (activeTool === 'box-select') {
+        setBoxSelection({ x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y });
+        boxSelectionRef.current = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+      } else if (activeTool === 'lasso' || activeTool === 'magic-wand') {
+        setFreehandPoints([pt]);
+        freehandPointsRef.current = [pt];
+      }
+      drawOverlay(sPt);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!image || totalW === 0 || totalH === 0) return;
+
+    if (e.touches.length === 2 && touchStartDistRef.current !== null) {
+      // 2 fingers pinch & zoom
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      const scaleMultiplier = dist / touchStartDistRef.current;
+      const newScale = Math.max(0.15, Math.min(16, touchStartScaleRef.current * scaleMultiplier));
+
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const midY = (t1.clientY + t2.clientY) / 2;
+      const deltaMidX = midX - touchStartMidRef.current.x;
+      const deltaMidY = midY - touchStartMidRef.current.y;
+
+      const newPanX = touchStartPanRef.current.x + deltaMidX;
+      const newPanY = touchStartPanRef.current.y + deltaMidY;
+
+      onUpdateView(newScale, { x: newPanX, y: newPanY });
+      drawOverlay();
+      return;
+    }
+
+    if (e.touches.length === 1 && isInteractingRef.current) {
+      const touch = e.touches[0];
+      if (activeTool === 'pan' && dragStartRef.current) {
+        onUpdateView(scale, {
+          x: touch.clientX - dragStartRef.current.x,
+          y: touch.clientY - dragStartRef.current.y,
+        });
+        return;
+      }
+
+      const pt = screenToImage(touch.clientX, touch.clientY);
+      if (!pt) return;
+
+      const container = containerRef.current;
+      const sPt = container
+        ? { x: touch.clientX - container.getBoundingClientRect().left, y: touch.clientY - container.getBoundingClientRect().top }
+        : null;
+
+      mousePosRef.current = pt;
+      mouseScreenPosRef.current = sPt;
+
+      if ((activeTool === 'brush' || activeTool === 'eraser') && maskCanvasRef.current && lastPointRef.current) {
+        const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
+        if (maskCtx) {
+          maskCtx.lineWidth = brushSize;
+          maskCtx.lineCap = 'round';
+          maskCtx.lineJoin = 'round';
+          if (activeTool === 'eraser') {
+            maskCtx.globalCompositeOperation = 'destination-out';
+            maskCtx.strokeStyle = 'rgba(0,0,0,1)';
+          } else {
+            maskCtx.globalCompositeOperation = 'source-over';
+            maskCtx.strokeStyle = '#ffffff';
+          }
+          maskCtx.beginPath();
+          maskCtx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+          maskCtx.lineTo(pt.x, pt.y);
+          maskCtx.stroke();
+        }
+        lastPointRef.current = pt;
+        renderLiveStrokePreview();
+        drawOverlay(sPt);
+      } else if (activeTool === 'box-select' && boxSelectionRef.current) {
+        const updatedBox = { ...boxSelectionRef.current, x1: pt.x, y1: pt.y };
+        setBoxSelection(updatedBox);
+        boxSelectionRef.current = updatedBox;
+        drawOverlay(sPt);
+      } else if ((activeTool === 'lasso' || activeTool === 'magic-wand') && freehandPointsRef.current.length > 0) {
+        const updatedLasso = [...freehandPointsRef.current, pt];
+        setFreehandPoints(updatedLasso);
+        freehandPointsRef.current = updatedLasso;
+        drawOverlay(sPt);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartDistRef.current = null;
+    if (isInteractingRef.current) {
+      handleMouseUp();
     }
   };
 
@@ -732,9 +897,13 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         mouseScreenPosRef.current = null;
         drawOverlay(null);
       }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className={`relative flex-1 h-full overflow-hidden select-none outline-none ${getBgStyle()} ${getCursorStyle()}`}
+      className={`relative flex-1 h-full overflow-hidden select-none outline-none touch-none ${getBgStyle()} ${getCursorStyle()}`}
     >
       {/* Hidden Offscreen Canvases */}
       <canvas ref={sourceCanvasRef} className="hidden" />

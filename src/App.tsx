@@ -38,8 +38,8 @@ export const App: React.FC = () => {
   const [activeTool, setActiveTool] = useState<ToolType>('magic-wand');
   const [brushSize, setBrushSize] = useState<number>(36);
   const [wandTolerance, setWandTolerance] = useState<number>(24);
-
   const [canvasBg, setCanvasBg] = useState<'dark-check' | 'light-check' | 'dark-solid' | 'light-solid'>('dark-check');
+  const [isMobileSettingsOpen, setIsMobileSettingsOpen] = useState<boolean>(false);
 
   const [scale, setScale] = useState<number>(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
@@ -425,11 +425,13 @@ export const App: React.FC = () => {
         onDownload={handleDownload}
         onResetZoom={handleResetZoom}
         hasImage={image !== null}
+        onToggleMobileSettings={() => setIsMobileSettingsOpen((prev) => !prev)}
+        isMobileSettingsOpen={isMobileSettingsOpen}
       />
 
       {/* Main Workspace */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Left Toolbar */}
+        {/* Left Toolbar / Mobile Bottom Floating Dock */}
         <ToolBar
           activeTool={activeTool}
           onSelectTool={setActiveTool}
@@ -464,7 +466,7 @@ export const App: React.FC = () => {
           renderedCanvasRef={renderedCanvasRef}
         />
 
-        {/* Right Settings Panel */}
+        {/* Right Settings Panel / Mobile Slide-Over Drawer */}
         <SettingsPanel
           halftone={halftone}
           onChangeHalftone={(s) => setHalftone((prev) => ({ ...prev, ...s }))}
@@ -474,6 +476,8 @@ export const App: React.FC = () => {
           canvasBg={canvasBg}
           onChangeCanvasBg={setCanvasBg}
           hasImage={image !== null}
+          isOpen={isMobileSettingsOpen}
+          onClose={() => setIsMobileSettingsOpen(false)}
         />
       </div>
     </div>

@@ -17,10 +17,10 @@ export function createFullMask(width: number, height: number): Uint8ClampedArray
 }
 
 /**
- * Advanced Magic Wand / Smart Lasso Object Cutout Engine (First-Hit Edge Barrier Wavefront):
- * Starts at the lasso boundary and advances inward through background until it hits the FIRST
- * color/edge transition of the subject, stopping strictly at the outer contour and preserving
- * all internal details (white shirts, skin, clothes, inner textures) 100% intact.
+ * Depth-Limited Strict-Barrier Smart Lasso Cutout Engine:
+ * Restricts background peeling strictly to a narrow outer margin (15-30px) immediately adjacent to
+ * the drawn lasso line, using ultra-strict edge gradients (E > 10) and color difference thresholds (Δ < 10).
+ * Completely protects all internal content (t-shirts, skin, clothes, details) from being eroded.
  */
 export function smartLassoCutout(
   srcCtx: CanvasRenderingContext2D,
@@ -29,7 +29,8 @@ export function smartLassoCutout(
   totalHeight: number,
   lassoPoints: Point[],
   mode: 'replace' | 'add' | 'subtract' = 'replace',
-  existingMask?: Uint8ClampedArray | null
+  existingMask?: Uint8ClampedArray | null,
+  snappingDepth = 28
 ): void {
   if (lassoPoints.length === 0) return;
   if (existingMask && mode !== 'replace') {
@@ -103,7 +104,7 @@ export function smartLassoCutout(
     return lassoAlpha[(y * totalWidth + x) * 4 + 3] > 128;
   };
 
-  // 3. Precompute High-Sensitivity Sobel Edge & Color Gradients
+  // 3. Precompute Ultra-Sensitive Sobel Edge & Color Gradients
   const lum = new Uint8Array(totalWidth * totalHeight);
   for (let y = minY; y <= maxY; y++) {
     const rowOffset = y * totalWidth;
@@ -136,14 +137,18 @@ export function smartLassoCutout(
       const gradColor = Math.max(dr, dg, db);
 
       const maxEdge = Math.max(gradLum, gradColor);
-      if (maxEdge > 18) {
+      // Ultra-strict edge barrier (detects even subtle edges on light backgrounds)
+      if (maxEdge > 10) {
         edgeBarrier[idx] = 1;
       }
     }
   }
 
-  // 4. Inward Wavefront from Lasso Perimeter (First-Hit Stop)
-  // Seeds store: x, y, seedR, seedG, seedB
+  // 4. Depth-Limited Inward Wavefront from Lasso Perimeter
+  // Maximum inward penetration buffer (strictly limits how deep background peeling can go)
+  const maxInwardDistance = Math.max(8, Math.min(snappingDepth, Math.round(Math.min(boxW, boxH) * 0.18)));
+
+  // Queue stores: x, y, seedR, seedG, seedB, currentDepth
   const visited = new Uint8Array(totalWidth * totalHeight);
   const isBackground = new Uint8Array(totalWidth * totalHeight);
   const queue: number[] = [];
@@ -151,7 +156,6 @@ export function smartLassoCutout(
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       if (isInsideLasso(x, y)) {
-        // Border of lasso loop
         const isBorder = (
           !isInsideLasso(x - 1, y) ||
           !isInsideLasso(x + 1, y) ||
@@ -164,7 +168,7 @@ export function smartLassoCutout(
           const pidx = idx * 4;
           visited[idx] = 1;
           isBackground[idx] = 1;
-          queue.push(x, y, pixels[pidx], pixels[pidx + 1], pixels[pidx + 2]);
+          queue.push(x, y, pixels[pidx], pixels[pidx + 1], pixels[pidx + 2], 0);
         }
       }
     }
@@ -177,6 +181,12 @@ export function smartLassoCutout(
     const sr = queue[head++];
     const sg = queue[head++];
     const sb = queue[head++];
+    const currentDepth = queue[head++];
+
+    // If reached maximum inward fence depth, STOP expanding deeper!
+    if (currentDepth >= maxInwardDistance) {
+      continue;
+    }
 
     const qidx = (qy * totalWidth + qx) * 4;
     const qr = pixels[qidx];
@@ -201,7 +211,7 @@ export function smartLassoCutout(
           if (na < 15) {
             visited[nidx] = 1;
             isBackground[nidx] = 1;
-            queue.push(nx, ny, sr, sg, sb);
+            queue.push(nx, ny, sr, sg, sb, currentDepth + 1);
             continue;
           }
 
@@ -209,22 +219,18 @@ export function smartLassoCutout(
           const ng = pixels[npidx + 1];
           const nb = pixels[npidx + 2];
 
-          // Step difference from previous pixel
+          // Strict step color jump and strict seed drift
           const stepDiff = Math.abs(nr - qr) + Math.abs(ng - qg) + Math.abs(nb - qb);
-          // Drift from starting border seed
           const seedDiff = Math.abs(nr - sr) + Math.abs(ng - sg) + Math.abs(nb - sb);
 
-          // FIRST-HIT STOP RULE:
-          // If we hit an edge barrier or color jump, STOP IMMEDIATELY!
-          // Do NOT mark as background, do NOT continue into subject!
-          if (edgeBarrier[nidx] || stepDiff > 22 || seedDiff > 42) {
-            visited[nidx] = 1; // mark as boundary visited so we don't re-test
-            // Notice: isBackground[nidx] remains 0! It belongs to the SUBJECT!
+          // STRICT FIRST-HIT STOP RULE:
+          // Stop immediately upon hitting an edge barrier or subtle color jump
+          if (edgeBarrier[nidx] || stepDiff > 10 || seedDiff > 20) {
+            visited[nidx] = 1; // Stop wavefront, belongs to SUBJECT
           } else {
-            // Still in smooth background area
             visited[nidx] = 1;
             isBackground[nidx] = 1;
-            queue.push(nx, ny, sr, sg, sb);
+            queue.push(nx, ny, sr, sg, sb, currentDepth + 1);
           }
         }
       }

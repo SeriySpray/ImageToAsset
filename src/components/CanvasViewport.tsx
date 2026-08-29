@@ -65,8 +65,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   useEffect(() => { scaleRef.current = scale; }, [scale]);
   useEffect(() => { panRef.current = pan; }, [pan]);
 
-  // Buffer padding around image
-  const pad = 60;
+  // Buffer padding around image (0px tight or 60px outer buffer)
+  const pad = (tornEdge.canvasPadding && tornEdge.canvasPadding > 0) ? 60 : 0;
   const rawW = image ? ((image as HTMLImageElement).naturalWidth || image.width) : 0;
   const rawH = image ? ((image as HTMLImageElement).naturalHeight || image.height) : 0;
   const totalW = rawW > 0 ? rawW + pad * 2 : 0;

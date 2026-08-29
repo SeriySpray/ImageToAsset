@@ -20,7 +20,7 @@ export const App: React.FC = () => {
   const [halftone, setHalftone] = useState<HalftoneSettings>(PRESETS[0].halftone);
   const [tornEdge, setTornEdge] = useState<TornEdgeSettings>({
     ...PRESETS[0].tornEdge,
-    canvasPadding: 60 // Fixed default 60px padding
+    canvasPadding: 0 // Default: OFF (tight fit without outer border)
   });
 
   const [image, setImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
@@ -49,7 +49,7 @@ export const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const renderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const pad = 60; // Locked default 60px buffer margin
+  const pad = (tornEdge.canvasPadding && tornEdge.canvasPadding > 0) ? 60 : 0;
   const rawW = image ? ((image as HTMLImageElement).naturalWidth || image.width) : 0;
   const rawH = image ? ((image as HTMLImageElement).naturalHeight || image.height) : 0;
   const totalW = rawW > 0 ? rawW + pad * 2 : 0;
@@ -70,13 +70,43 @@ export const App: React.FC = () => {
     return newMask;
   }, []);
 
+  // Toggle Buffer Margin (0px tight or 60px outer buffer)
+  const handleToggleBufferPadding = useCallback((enabled: boolean) => {
+    const oldPad = (tornEdge.canvasPadding && tornEdge.canvasPadding > 0) ? 60 : 0;
+    const newPad = enabled ? 60 : 0;
+    if (oldPad === newPad) return;
+
+    setTornEdge((prev) => ({ ...prev, canvasPadding: newPad }));
+
+    if (image && mask) {
+      const workW = (image as HTMLImageElement).naturalWidth || image.width;
+      const workH = (image as HTMLImageElement).naturalHeight || image.height;
+      const oldTotalW = workW + oldPad * 2;
+      const newTotalW = workW + newPad * 2;
+      const newTotalH = workH + newPad * 2;
+      const newMask = new Uint8ClampedArray(newTotalW * newTotalH);
+
+      // Copy existing mask preserving cutout alignment
+      for (let y = 0; y < workH; y++) {
+        const oldRowOffset = (y + oldPad) * oldTotalW;
+        const newRowOffset = (y + newPad) * newTotalW;
+        for (let x = 0; x < workW; x++) {
+          newMask[newRowOffset + (x + newPad)] = mask[oldRowOffset + (x + oldPad)];
+        }
+      }
+      setMask(newMask);
+      setUndoStack([]);
+      setRedoStack([]);
+    }
+  }, [image, mask, tornEdge.canvasPadding]);
+
   // Load image into memory with automatic working-canvas clamping for ultra-fast 60 FPS performance
   const loadImage = useCallback((imgElement: HTMLImageElement) => {
     const t0 = performance.now();
     rawImageRef.current = imgElement;
     const origW = imgElement.naturalWidth || imgElement.width;
     const origH = imgElement.naturalHeight || imgElement.height;
-    const currentPad = 60;
+    const currentPad = (tornEdge.canvasPadding && tornEdge.canvasPadding > 0) ? 60 : 0;
 
     let targetSource: HTMLImageElement | HTMLCanvasElement = imgElement;
     let workW = origW;
@@ -116,7 +146,7 @@ export const App: React.FC = () => {
 
     const t1 = performance.now();
     console.log(`[ImageToAsset Perf] Image setup completed in ${(t1 - t0).toFixed(2)}ms (working size: ${workW}x${workH}, padded total: ${workW + currentPad * 2}x${workH + currentPad * 2})`);
-  }, [initializePaddedMask]);
+  }, [initializePaddedMask, tornEdge.canvasPadding]);
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -518,6 +548,7 @@ export const App: React.FC = () => {
           onChangeHalftone={(s) => setHalftone((prev) => ({ ...prev, ...s }))}
           tornEdge={tornEdge}
           onChangeTornEdge={(s) => setTornEdge((prev) => ({ ...prev, ...s }))}
+          onToggleBufferPadding={handleToggleBufferPadding}
           canvasBg={canvasBg}
           onChangeCanvasBg={setCanvasBg}
           hasImage={image !== null}

@@ -16,6 +16,7 @@ interface SettingsPanelProps {
   onChangeHalftone: (settings: Partial<HalftoneSettings>) => void;
   tornEdge: TornEdgeSettings;
   onChangeTornEdge: (settings: Partial<TornEdgeSettings>) => void;
+  onToggleBufferPadding?: (enabled: boolean) => void;
   canvasBg: 'dark-check' | 'light-check' | 'dark-solid' | 'light-solid';
   onChangeCanvasBg: (bg: 'dark-check' | 'light-check' | 'dark-solid' | 'light-solid') => void;
   hasImage: boolean;
@@ -26,6 +27,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onChangeHalftone,
   tornEdge,
   onChangeTornEdge,
+  onToggleBufferPadding,
   canvasBg,
   onChangeCanvasBg,
   hasImage,
@@ -219,6 +221,38 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   />
                 ))}
               </div>
+            </div>
+
+            {/* Outer Buffer Margin Toggle (60px) */}
+            <div className="flex items-center justify-between pt-2 border-t border-[#1e1e1e]">
+              <div>
+                <span className="text-[11px] text-neutral-300 font-medium block">
+                  Зовнішні поля (60px)
+                </span>
+                <span className="text-[10px] text-neutral-500 block">
+                  Обводка по краях прямокутника
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  const newState = !(tornEdge.canvasPadding && tornEdge.canvasPadding > 0);
+                  if (onToggleBufferPadding) {
+                    onToggleBufferPadding(newState);
+                  } else {
+                    onChangeTornEdge({ canvasPadding: newState ? 60 : 0 });
+                  }
+                }}
+                className={`w-8 h-4 rounded-full transition relative p-0.5 cursor-pointer ${
+                  (tornEdge.canvasPadding && tornEdge.canvasPadding > 0) ? 'bg-white' : 'bg-[#262626]'
+                }`}
+                title="Увімкнути/вимкнути буферні поля 60px для створення зовнішньої обводки прямокутного зображення"
+              >
+                <div
+                  className={`w-3 h-3 rounded-full transition transform ${
+                    (tornEdge.canvasPadding && tornEdge.canvasPadding > 0) ? 'bg-black translate-x-4' : 'bg-neutral-400 translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
           </div>
         )}

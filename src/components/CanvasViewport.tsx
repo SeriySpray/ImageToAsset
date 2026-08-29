@@ -266,12 +266,17 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (!clipCtx) return;
 
     // 1. Clip halftone inside current mask
+    clipCtx.save();
+    clipCtx.globalCompositeOperation = 'source-over';
     clipCtx.clearRect(0, 0, totalW, totalH);
     clipCtx.drawImage(halftoneCanvasRef.current, 0, 0);
     clipCtx.globalCompositeOperation = 'destination-in';
     clipCtx.drawImage(maskCanvasRef.current, 0, 0);
+    clipCtx.restore();
 
     // 2. Render onto display canvas
+    dispCtx.save();
+    dispCtx.globalCompositeOperation = 'source-over';
     dispCtx.clearRect(0, 0, totalW, totalH);
     if (tornEdge.enabled && paperCanvasRef.current) {
       dispCtx.save();
@@ -282,6 +287,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       dispCtx.restore();
     }
     dispCtx.drawImage(clipCanvas, 0, 0);
+    dispCtx.restore();
   }, [totalW, totalH, tornEdge.enabled]);
 
   // Screen to Image coordinates conversion

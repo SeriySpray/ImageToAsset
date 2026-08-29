@@ -135,7 +135,7 @@ export function computeDistanceTransform(
 const noiseGenerator = new FastNoise(4242);
 
 /**
- * Renders the paper sticker backing with natural deckle edge onto a target canvas
+ * Ultra-fast paper sticker backing renderer with dual fast-path culling
  */
 export function renderPaperBacking(
   targetCanvas: HTMLCanvasElement,
@@ -160,7 +160,8 @@ export function renderPaperBacking(
   const pb = parseInt(hex.substring(4, 6), 16) || 255;
 
   const { padding, roughness, frequency, octaves, paperTexture } = settings;
-  const maxPossiblePadding = padding + roughness * 1.6;
+  const maxPossiblePadding = padding + roughness * 1.25;
+  const innerCorePadding = Math.max(0, padding - roughness * 1.25);
 
   // Render paper backing with fast boundary noise evaluation
   for (let y = 0; y < height; y++) {
@@ -170,14 +171,14 @@ export function renderPaperBacking(
       const pixelIdx = idx * 4;
       const dist = distField[idx];
 
-      // Fast path: Far outside sticker
+      // Fast path 1: Far outside sticker (skip noise)
       if (dist > maxPossiblePadding) {
         paperPixels[pixelIdx + 3] = 0;
         continue;
       }
 
-      // Fast path: Inside mask core
-      if (dist === 0) {
+      // Fast path 2: Solid core of sticker (skip noise)
+      if (dist <= innerCorePadding) {
         let r = pr;
         let g = pg;
         let b = pb;
@@ -194,7 +195,7 @@ export function renderPaperBacking(
         continue;
       }
 
-      // Boundary region: Evaluate fractal torn paper edge noise
+      // Fast path 3: Narrow boundary ribbon (evaluate noise ONLY here)
       const n1 = noiseGenerator.fbm2D(x * frequency, y * frequency, octaves);
       const n2 = noiseGenerator.noise2D(x * frequency * 4, y * frequency * 4) * 0.25;
       const tornNoise = (n1 + n2) * roughness;
@@ -213,10 +214,7 @@ export function renderPaperBacking(
         }
 
         const edgeDist = effectivePadding - dist;
-        let alpha = 255;
-        if (edgeDist < 1.2) {
-          alpha = Math.floor(Math.max(0, Math.min(1, edgeDist / 1.2)) * 255);
-        }
+        const alpha = edgeDist < 1.2 ? Math.floor(Math.max(0, Math.min(1, edgeDist / 1.2)) * 255) : 255;
 
         paperPixels[pixelIdx] = r;
         paperPixels[pixelIdx + 1] = g;

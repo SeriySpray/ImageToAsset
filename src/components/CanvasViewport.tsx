@@ -49,13 +49,23 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const [isInteracting, setIsInteracting] = useState(false);
+  const isInteractingRef = useRef(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const lastPointRef = useRef<Point | null>(null);
   const dragStartRef = useRef<Point | null>(null);
 
   const [boxSelection, setBoxSelection] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const boxSelectionRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  useEffect(() => { boxSelectionRef.current = boxSelection; }, [boxSelection]);
+
   const [polygonPoints, setPolygonPoints] = useState<Point[]>([]);
+  const polygonPointsRef = useRef<Point[]>([]);
+  useEffect(() => { polygonPointsRef.current = polygonPoints; }, [polygonPoints]);
+
   const [freehandPoints, setFreehandPoints] = useState<Point[]>([]);
+  const freehandPointsRef = useRef<Point[]>([]);
+  useEffect(() => { freehandPointsRef.current = freehandPoints; }, [freehandPoints]);
+
   const [mousePos, setMousePos] = useState<Point | null>(null);
   const [splitPosition, setSplitPosition] = useState<number>(0.5);
 
@@ -118,7 +128,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   // Global Mouse Up Listener
   useEffect(() => {
     const handleGlobalMouseUp = () => {
-      if (isInteracting) {
+      if (isInteractingRef.current) {
+        isInteractingRef.current = false;
         setIsInteracting(false);
         dragStartRef.current = null;
         lastPointRef.current = null;
@@ -127,7 +138,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     };
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-  }, [isInteracting, commitMaskCanvas]);
+  }, [commitMaskCanvas]);
 
   // Native Non-Passive Wheel Zoom (zooms strictly around cursor)
   useEffect(() => {
@@ -294,6 +305,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (!image || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
 
     if (e.button === 1 || isSpacePressed || activeTool === 'pan') {
+      isInteractingRef.current = true;
       setIsInteracting(true);
       dragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
       return;
@@ -304,6 +316,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const pt = screenToImage(e.clientX, e.clientY);
     if (!pt) return;
 
+    isInteractingRef.current = true;
     setIsInteracting(true);
     lastPointRef.current = pt;
 
@@ -329,31 +342,49 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
       renderLiveStrokePreview();
     } else if (activeTool === 'box-select' || activeTool === 'auto-cutout') {
-      setBoxSelection({ x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y });
+      const initialBox = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+      setBoxSelection(initialBox);
+      boxSelectionRef.current = initialBox;
     } else if (activeTool === 'lasso') {
-      setFreehandPoints([pt]);
+      const initialLasso = [pt];
+      setFreehandPoints(initialLasso);
+      freehandPointsRef.current = initialLasso;
     } else if (activeTool === 'polygon') {
-      if (polygonPoints.length >= 3) {
-        const first = polygonPoints[0];
+      if (polygonPointsRef.current.length >= 3) {
+        const first = polygonPointsRef.current[0];
         const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
-        if (dist < 12 / scale) {
-          maskCtx.globalCompositeOperation = e.altKey ? 'destination-out' : 'source-over';
-          maskCtx.fillStyle = '#ffffff';
+        if (dist < 14 / scale) {
+          if (e.altKey) {
+            maskCtx.globalCompositeOperation = 'destination-out';
+          } else if (e.shiftKey) {
+            maskCtx.globalCompositeOperation = 'source-over';
+            maskCtx.fillStyle = '#ffffff';
+          } else {
+            // Default Isolate mode: clear everything outside polygon
+            maskCtx.clearRect(0, 0, totalW, totalH);
+            maskCtx.globalCompositeOperation = 'source-over';
+            maskCtx.fillStyle = '#ffffff';
+          }
+
           maskCtx.beginPath();
-          maskCtx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
-          for (let i = 1; i < polygonPoints.length; i++) {
-            maskCtx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+          maskCtx.moveTo(polygonPointsRef.current[0].x, polygonPointsRef.current[0].y);
+          for (let i = 1; i < polygonPointsRef.current.length; i++) {
+            maskCtx.lineTo(polygonPointsRef.current[i].x, polygonPointsRef.current[i].y);
           }
           maskCtx.closePath();
           maskCtx.fill();
 
           setPolygonPoints([]);
+          polygonPointsRef.current = [];
+          isInteractingRef.current = false;
           setIsInteracting(false);
           commitMaskCanvas();
           return;
         }
       }
-      setPolygonPoints((prev) => [...prev, pt]);
+      const updatedPoly = [...polygonPointsRef.current, pt];
+      setPolygonPoints(updatedPoly);
+      polygonPointsRef.current = updatedPoly;
     } else if (activeTool === 'magic-wand' && sourceCanvasRef.current) {
       const targetMask = mask ? new Uint8ClampedArray(mask) : createFullMask(totalW, totalH);
       const mode = e.altKey ? 'subtract' : (e.shiftKey ? 'add' : 'replace');
@@ -371,6 +402,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       );
 
       onUpdateMask(targetMask);
+      isInteractingRef.current = false;
       setIsInteracting(false);
     }
   };
@@ -380,7 +412,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const pt = screenToImage(e.clientX, e.clientY);
     if (pt) setMousePos(pt);
 
-    if (!isInteracting) return;
+    if (!isInteractingRef.current) return;
 
     if (dragStartRef.current && (isSpacePressed || activeTool === 'pan' || e.buttons === 4)) {
       onUpdateView(scale, {
@@ -416,17 +448,22 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       lastPointRef.current = pt;
       renderLiveStrokePreview();
     } else if (activeTool === 'box-select' || activeTool === 'auto-cutout') {
-      if (boxSelection) {
-        setBoxSelection({ ...boxSelection, x1: pt.x, y1: pt.y });
+      if (boxSelectionRef.current) {
+        const updated = { ...boxSelectionRef.current, x1: pt.x, y1: pt.y };
+        setBoxSelection(updated);
+        boxSelectionRef.current = updated;
       }
     } else if (activeTool === 'lasso') {
-      setFreehandPoints((prev) => [...prev, pt]);
+      const updated = [...freehandPointsRef.current, pt];
+      setFreehandPoints(updated);
+      freehandPointsRef.current = updated;
     }
   };
 
   // Mouse Up
   const handleMouseUp = (e: React.MouseEvent) => {
-    if (!isInteracting) return;
+    if (!isInteractingRef.current && !isInteracting) return;
+    isInteractingRef.current = false;
     setIsInteracting(false);
     dragStartRef.current = null;
     lastPointRef.current = null;
@@ -435,21 +472,40 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
     if (!maskCtx) return;
 
+    const curBox = boxSelectionRef.current || boxSelection;
+    const curLasso = freehandPointsRef.current.length > 2 ? freehandPointsRef.current : freehandPoints;
+
     if (activeTool === 'brush' || activeTool === 'eraser') {
       commitMaskCanvas();
-    } else if (activeTool === 'box-select' && boxSelection) {
-      const minX = Math.min(boxSelection.x0, boxSelection.x1);
-      const minY = Math.min(boxSelection.y0, boxSelection.y1);
-      const w = Math.abs(boxSelection.x1 - boxSelection.x0);
-      const h = Math.abs(boxSelection.y1 - boxSelection.y0);
+    } else if (activeTool === 'box-select' && curBox) {
+      const minX = Math.min(curBox.x0, curBox.x1);
+      const minY = Math.min(curBox.y0, curBox.y1);
+      const w = Math.abs(curBox.x1 - curBox.x0);
+      const h = Math.abs(curBox.y1 - curBox.y0);
 
-      maskCtx.globalCompositeOperation = e.altKey ? 'destination-out' : 'source-over';
-      maskCtx.fillStyle = '#ffffff';
-      maskCtx.fillRect(minX, minY, w, h);
+      if (w > 4 && h > 4) {
+        if (e.altKey) {
+          // Alt: Subtract from mask
+          maskCtx.globalCompositeOperation = 'destination-out';
+          maskCtx.fillRect(minX, minY, w, h);
+        } else if (e.shiftKey) {
+          // Shift: Add to mask
+          maskCtx.globalCompositeOperation = 'source-over';
+          maskCtx.fillStyle = '#ffffff';
+          maskCtx.fillRect(minX, minY, w, h);
+        } else {
+          // Default: ISOLATE SELECTION (erase everything outside)
+          maskCtx.clearRect(0, 0, totalW, totalH);
+          maskCtx.globalCompositeOperation = 'source-over';
+          maskCtx.fillStyle = '#ffffff';
+          maskCtx.fillRect(minX, minY, w, h);
+        }
+      }
 
       setBoxSelection(null);
+      boxSelectionRef.current = null;
       commitMaskCanvas();
-    } else if (activeTool === 'auto-cutout' && boxSelection && sourceCanvasRef.current) {
+    } else if (activeTool === 'auto-cutout' && curBox && sourceCanvasRef.current) {
       const autoMask = new Uint8ClampedArray(totalW * totalH);
 
       smartAutoCutout(
@@ -457,8 +513,12 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         autoMask,
         totalW,
         totalH,
-        boxSelection
+        curBox
       );
+
+      // Isolate auto-cutout subject by replacing mask
+      maskCtx.clearRect(0, 0, totalW, totalH);
+      maskCtx.globalCompositeOperation = 'source-over';
 
       const autoCanvas = document.createElement('canvas');
       autoCanvas.width = totalW;
@@ -475,25 +535,50 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
           }
         }
         autoCtx.putImageData(imgD, 0, 0);
-
-        maskCtx.globalCompositeOperation = 'source-over';
         maskCtx.drawImage(autoCanvas, 0, 0);
       }
 
       setBoxSelection(null);
+      boxSelectionRef.current = null;
       commitMaskCanvas();
-    } else if (activeTool === 'lasso' && freehandPoints.length > 2) {
-      maskCtx.globalCompositeOperation = e.altKey ? 'destination-out' : 'source-over';
-      maskCtx.fillStyle = '#ffffff';
-      maskCtx.beginPath();
-      maskCtx.moveTo(freehandPoints[0].x, freehandPoints[0].y);
-      for (let i = 1; i < freehandPoints.length; i++) {
-        maskCtx.lineTo(freehandPoints[i].x, freehandPoints[i].y);
+    } else if (activeTool === 'lasso' && curLasso.length > 2) {
+      if (e.altKey) {
+        // Alt: Subtract from mask
+        maskCtx.globalCompositeOperation = 'destination-out';
+        maskCtx.beginPath();
+        maskCtx.moveTo(curLasso[0].x, curLasso[0].y);
+        for (let i = 1; i < curLasso.length; i++) {
+          maskCtx.lineTo(curLasso[i].x, curLasso[i].y);
+        }
+        maskCtx.closePath();
+        maskCtx.fill();
+      } else if (e.shiftKey) {
+        // Shift: Add to mask
+        maskCtx.globalCompositeOperation = 'source-over';
+        maskCtx.fillStyle = '#ffffff';
+        maskCtx.beginPath();
+        maskCtx.moveTo(curLasso[0].x, curLasso[0].y);
+        for (let i = 1; i < curLasso.length; i++) {
+          maskCtx.lineTo(curLasso[i].x, curLasso[i].y);
+        }
+        maskCtx.closePath();
+        maskCtx.fill();
+      } else {
+        // Default: ISOLATE SELECTION (erase everything outside)
+        maskCtx.clearRect(0, 0, totalW, totalH);
+        maskCtx.globalCompositeOperation = 'source-over';
+        maskCtx.fillStyle = '#ffffff';
+        maskCtx.beginPath();
+        maskCtx.moveTo(curLasso[0].x, curLasso[0].y);
+        for (let i = 1; i < curLasso.length; i++) {
+          maskCtx.lineTo(curLasso[i].x, curLasso[i].y);
+        }
+        maskCtx.closePath();
+        maskCtx.fill();
       }
-      maskCtx.closePath();
-      maskCtx.fill();
 
       setFreehandPoints([]);
+      freehandPointsRef.current = [];
       commitMaskCanvas();
     }
   };
@@ -565,12 +650,22 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
   }, [image, boxSelection, polygonPoints, freehandPoints, mousePos, activeTool, scale, totalW, totalH]);
 
-  const handleDoubleClick = () => {
+  const handleDoubleClick = (e: React.MouseEvent) => {
     if (activeTool === 'polygon' && polygonPoints.length >= 3 && maskCanvasRef.current) {
       const maskCtx = maskCanvasRef.current.getContext('2d');
       if (maskCtx) {
-        maskCtx.globalCompositeOperation = 'source-over';
-        maskCtx.fillStyle = '#ffffff';
+        if (e.altKey) {
+          maskCtx.globalCompositeOperation = 'destination-out';
+        } else if (e.shiftKey) {
+          maskCtx.globalCompositeOperation = 'source-over';
+          maskCtx.fillStyle = '#ffffff';
+        } else {
+          // Default Isolate mode: clear outside
+          maskCtx.clearRect(0, 0, totalW, totalH);
+          maskCtx.globalCompositeOperation = 'source-over';
+          maskCtx.fillStyle = '#ffffff';
+        }
+
         maskCtx.beginPath();
         maskCtx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
         for (let i = 1; i < polygonPoints.length; i++) {
@@ -580,6 +675,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         maskCtx.fill();
 
         setPolygonPoints([]);
+        isInteractingRef.current = false;
         setIsInteracting(false);
         commitMaskCanvas();
       }

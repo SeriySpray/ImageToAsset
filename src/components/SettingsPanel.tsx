@@ -8,7 +8,6 @@ import {
   Eye,
   Layers,
   Image as ImageIcon,
-  Maximize
 } from 'lucide-react';
 import { HalftoneSettings, TornEdgeSettings, GraphicMode } from '../types';
 
@@ -68,7 +67,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 key={m.id}
                 onClick={() => onChangeHalftone({ mode: m.id })}
-                className={`flex items-center justify-start gap-1.5 py-2 px-2.5 rounded-lg text-xs font-medium transition ${
+                className={`flex items-center justify-start gap-1.5 py-2 px-2.5 rounded-lg text-xs font-medium transition cursor-pointer ${
                   active
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -129,7 +128,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <span className="text-xs text-slate-300 font-medium">Інвертувати кольори (Негатив)</span>
             <button
               onClick={() => onChangeHalftone({ invert: !halftone.invert })}
-              className={`w-9 h-5 rounded-full transition relative p-0.5 ${
+              className={`w-9 h-5 rounded-full transition relative p-0.5 cursor-pointer ${
                 halftone.invert ? 'bg-indigo-600' : 'bg-slate-800'
               }`}
             >
@@ -154,7 +153,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
           <button
             onClick={() => onChangeTornEdge({ enabled: !tornEdge.enabled })}
-            className={`w-9 h-5 rounded-full transition relative p-0.5 ${
+            className={`w-9 h-5 rounded-full transition relative p-0.5 cursor-pointer ${
               tornEdge.enabled ? 'bg-sky-500' : 'bg-slate-800'
             }`}
           >
@@ -200,26 +199,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               />
             </div>
 
-            {/* Buffer Padding around Image */}
-            <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-slate-300 font-medium flex items-center gap-1">
-                  <Maximize className="w-3.5 h-3.5 text-sky-400" />
-                  Поля полотна (Буфер для обвідки)
-                </span>
-                <span className="font-mono text-sky-400 font-bold">{tornEdge.canvasPadding || 60}px</span>
-              </div>
-              <input
-                type="range"
-                min="20"
-                max="140"
-                step="10"
-                value={tornEdge.canvasPadding || 60}
-                onChange={(e) => onChangeTornEdge({ canvasPadding: Number(e.target.value) })}
-                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
-              />
-            </div>
-
             {/* Paper Color */}
             <div>
               <label className="text-[11px] font-medium text-slate-400 mb-1.5 block">
@@ -230,7 +209,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   <button
                     key={c.value}
                     onClick={() => onChangeTornEdge({ paperColor: c.value })}
-                    className={`h-7 rounded-lg border flex items-center justify-center transition ${
+                    className={`h-7 rounded-lg border flex items-center justify-center transition cursor-pointer ${
                       tornEdge.paperColor.toLowerCase() === c.value.toLowerCase()
                         ? 'border-sky-400 ring-2 ring-sky-400/30'
                         : 'border-slate-700 hover:border-slate-500'
@@ -257,7 +236,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="grid grid-cols-2 gap-1.5">
           <button
             onClick={() => onChangeCanvasBg('dark-check')}
-            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition ${
+            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition cursor-pointer ${
               canvasBg === 'dark-check'
                 ? 'bg-slate-800 text-slate-100 border-indigo-500/80 shadow-sm'
                 : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
@@ -267,7 +246,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </button>
           <button
             onClick={() => onChangeCanvasBg('light-check')}
-            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition ${
+            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition cursor-pointer ${
               canvasBg === 'light-check'
                 ? 'bg-slate-800 text-slate-100 border-indigo-500/80 shadow-sm'
                 : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
@@ -277,7 +256,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </button>
           <button
             onClick={() => onChangeCanvasBg('dark-solid')}
-            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition ${
+            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition cursor-pointer ${
               canvasBg === 'dark-solid'
                 ? 'bg-slate-800 text-slate-100 border-indigo-500/80 shadow-sm'
                 : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
@@ -287,7 +266,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </button>
           <button
             onClick={() => onChangeCanvasBg('light-solid')}
-            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition ${
+            className={`py-2 px-2 rounded-lg text-xs font-medium border text-center transition cursor-pointer ${
               canvasBg === 'light-solid'
                 ? 'bg-slate-800 text-slate-100 border-indigo-500/80 shadow-sm'
                 : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'

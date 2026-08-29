@@ -1,11 +1,9 @@
 export type ToolType = 
-  | 'auto-cutout'
   | 'magic-wand'
   | 'brush'
   | 'eraser'
   | 'box-select'
   | 'lasso'
-  | 'polygon'
   | 'pan';
 
 export type GraphicMode = 

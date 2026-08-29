@@ -3,7 +3,6 @@ import {
   Hand,
   Square,
   Lasso,
-  Pentagon,
   Paintbrush,
   Eraser,
   Wand2,
@@ -42,7 +41,6 @@ export const ToolBar: React.FC<ToolBarProps> = ({
     { id: 'eraser', name: 'Ластик маски (E)', icon: <Eraser className="w-4 h-4" />, shortcut: 'E' },
     { id: 'box-select', name: 'Виділення прямокутником (M)', icon: <Square className="w-4 h-4" />, shortcut: 'M' },
     { id: 'lasso', name: 'Довільне ласо (L)', icon: <Lasso className="w-4 h-4" />, shortcut: 'L' },
-    { id: 'polygon', name: 'Полігональне ласо (P)', icon: <Pentagon className="w-4 h-4" />, shortcut: 'P' },
     { id: 'pan', name: 'Панорамування / Зум (H / Space)', icon: <Hand className="w-4 h-4" />, shortcut: 'H' },
   ];
 
@@ -59,7 +57,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
               key={tool.id}
               onClick={() => onSelectTool(tool.id)}
               title={`${tool.name}`}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition relative group ${
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition relative group cursor-pointer ${
                 isActive
                   ? tool.highlight
                     ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30'
@@ -102,7 +100,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
         <button
           onClick={onFillAllMask}
           title="Виділити все полотно"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 transition relative group"
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 transition relative group cursor-pointer"
         >
           <Maximize className="w-4 h-4" />
           <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-md whitespace-nowrap shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
@@ -114,7 +112,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
         <button
           onClick={onInvertMask}
           title="Інвертувати маску"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 transition relative group"
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 transition relative group cursor-pointer"
         >
           <FlipHorizontal className="w-4 h-4" />
           <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-md whitespace-nowrap shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
@@ -126,7 +124,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
         <button
           onClick={onClearMask}
           title="Очистити всю маску"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 transition relative group"
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 transition relative group cursor-pointer"
         >
           <Trash2 className="w-4 h-4" />
           <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-rose-300 text-xs rounded-md whitespace-nowrap shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">

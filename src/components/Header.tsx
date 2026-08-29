@@ -1,24 +1,17 @@
 import React, { useState } from 'react';
 import { 
   Upload, 
-  Sparkles, 
   Copy, 
   Download, 
   Undo2, 
   Redo2, 
-  Image as ImageIcon,
   Check,
   SplitSquareVertical,
   Maximize2
 } from 'lucide-react';
-import { Preset } from '../types';
-import { PRESETS } from '../constants/presets';
 
 interface HeaderProps {
-  currentPresetId: string;
-  onSelectPreset: (preset: Preset) => void;
   onUploadClick: () => void;
-  onOpenSamples: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -32,10 +25,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  currentPresetId,
-  onSelectPreset,
   onUploadClick,
-  onOpenSamples,
   onUndo,
   onRedo,
   canUndo,
@@ -80,62 +70,31 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={onUploadClick}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800/80 hover:bg-slate-700/80 hover:text-white border border-slate-700/60 rounded-lg transition-all shadow-sm"
+          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800/80 hover:bg-slate-700/80 hover:text-white border border-slate-700/60 rounded-lg transition-all shadow-sm cursor-pointer"
         >
           <Upload className="w-3.5 h-3.5 text-indigo-400" />
           <span>Завантажити фото</span>
         </button>
-
-        <button
-          onClick={onOpenSamples}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-800/40 hover:bg-slate-800 hover:text-white border border-slate-700/40 rounded-lg transition-all"
-        >
-          <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
-          <span>Референси проєкту</span>
-        </button>
       </div>
 
-      {/* Center: Presets & Quick View Tools */}
+      {/* Center: Quick Navigation & View Tools */}
       <div className="flex items-center gap-2">
         {hasImage && (
           <>
-            <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5">
-              <span className="px-2 text-[11px] font-medium text-slate-400 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-amber-400" />
-                Стиль:
-              </span>
-              <select
-                value={currentPresetId}
-                onChange={(e) => {
-                  const p = PRESETS.find((item) => item.id === e.target.value);
-                  if (p) onSelectPreset(p);
-                }}
-                className="bg-transparent text-xs text-slate-200 font-medium py-1 px-2 pr-6 rounded focus:outline-none cursor-pointer"
-              >
-                {PRESETS.map((preset) => (
-                  <option key={preset.id} value={preset.id} className="bg-slate-900 text-slate-200">
-                    {preset.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="h-5 w-px bg-slate-800 mx-1" />
-
             <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800/80 p-0.5 rounded-lg">
               <button
                 onClick={onUndo}
                 disabled={!canUndo}
                 title="Скасувати (Ctrl+Z)"
-                className="p-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-slate-800 transition"
+                className="p-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-slate-800 transition cursor-pointer"
               >
                 <Undo2 className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={onRedo}
                 disabled={!canRedo}
-                title="Повторити (Ctrl+Y)"
-                className="p-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-slate-800 transition"
+                title="Повторити (Ctrl+Y / Ctrl+Shift+Z)"
+                className="p-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-slate-800 transition cursor-pointer"
               >
                 <Redo2 className="w-3.5 h-3.5" />
               </button>
@@ -145,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 onClick={onToggleSplitView}
                 title="Розділений екран До / Після"
-                className={`p-1.5 rounded transition ${
+                className={`p-1.5 rounded transition cursor-pointer ${
                   showSplitView
                     ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
                     : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
@@ -156,7 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 onClick={onResetZoom}
                 title="Скинути масштаб (100%)"
-                className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded transition"
+                className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded transition cursor-pointer"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
               </button>
@@ -170,12 +129,12 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={handleCopy}
           disabled={!hasImage}
-          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition shadow-sm ${
+          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition shadow-sm cursor-pointer ${
             copied
               ? 'bg-emerald-600 text-white border border-emerald-500'
               : 'bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/80 disabled:opacity-40 disabled:cursor-not-allowed'
           }`}
-          title="Копіювати прозорий PNG асет у буфер обміну"
+          title="Копіювати прозорий PNG асет у буфер обміну (Ctrl+C)"
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           <span>{copied ? 'Скопійовано!' : 'Копіювати PNG'}</span>
@@ -185,7 +144,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => setShowExportMenu(!showExportMenu)}
             disabled={!hasImage}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-indigo-400" />
             <span>Експорт</span>
@@ -201,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onDownload(1);
                   setShowExportMenu(false);
                 }}
-                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between"
+                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between cursor-pointer"
               >
                 <span>1x (Оригінал)</span>
                 <span className="text-[10px] text-slate-400">PNG</span>
@@ -211,7 +170,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onDownload(2);
                   setShowExportMenu(false);
                 }}
-                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between"
+                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between cursor-pointer"
               >
                 <span>2x (Retina HD)</span>
                 <span className="text-[10px] text-indigo-400">Рекомендовано</span>
@@ -221,7 +180,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onDownload(4);
                   setShowExportMenu(false);
                 }}
-                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between"
+                className="w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-between cursor-pointer"
               >
                 <span>4x (Ultra HD)</span>
                 <span className="text-[10px] text-slate-400">Презентації</span>

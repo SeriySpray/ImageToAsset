@@ -16,7 +16,6 @@ interface CanvasViewportProps {
   canvasBg: 'dark-check' | 'light-check' | 'dark-solid' | 'light-solid';
   showSplitView: boolean;
   onDropFile: (file: File) => void;
-  onOpenSamples: () => void;
   scale: number;
   pan: Point;
   onUpdateView: (scale: number, pan: Point) => void;
@@ -34,7 +33,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   canvasBg,
   showSplitView,
   onDropFile,
-  onOpenSamples,
   scale,
   pan,
   onUpdateView,
@@ -58,9 +56,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const boxSelectionRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   useEffect(() => { boxSelectionRef.current = boxSelection; }, [boxSelection]);
 
-  const [polygonPoints, setPolygonPoints] = useState<Point[]>([]);
-  const polygonPointsRef = useRef<Point[]>([]);
-  useEffect(() => { polygonPointsRef.current = polygonPoints; }, [polygonPoints]);
+
 
   const [freehandPoints, setFreehandPoints] = useState<Point[]>([]);
   const freehandPointsRef = useRef<Point[]>([]);
@@ -382,42 +378,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       const initialLasso = [pt];
       setFreehandPoints(initialLasso);
       freehandPointsRef.current = initialLasso;
-    } else if (activeTool === 'polygon') {
-      if (polygonPointsRef.current.length >= 3) {
-        const first = polygonPointsRef.current[0];
-        const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
-        if (dist < 14 / scale) {
-          if (e.altKey) {
-            maskCtx.globalCompositeOperation = 'destination-out';
-          } else if (e.shiftKey) {
-            maskCtx.globalCompositeOperation = 'source-over';
-            maskCtx.fillStyle = '#ffffff';
-          } else {
-            // Default Isolate mode
-            maskCtx.clearRect(0, 0, totalW, totalH);
-            maskCtx.globalCompositeOperation = 'source-over';
-            maskCtx.fillStyle = '#ffffff';
-          }
-
-          maskCtx.beginPath();
-          maskCtx.moveTo(polygonPointsRef.current[0].x, polygonPoints[0].y);
-          for (let i = 1; i < polygonPoints.length; i++) {
-            maskCtx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
-          }
-          maskCtx.closePath();
-          maskCtx.fill();
-
-          setPolygonPoints([]);
-          polygonPointsRef.current = [];
-          isInteractingRef.current = false;
-          setIsInteracting(false);
-          commitMaskCanvas();
-          return;
-        }
-      }
-      const updatedPoly = [...polygonPointsRef.current, pt];
-      setPolygonPoints(updatedPoly);
-      polygonPointsRef.current = updatedPoly;
     }
   };
 
@@ -601,32 +561,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       ctx.restore();
     }
 
-    if (polygonPoints.length > 0) {
-      ctx.save();
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2 / scale;
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
-      ctx.beginPath();
-      ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
-      for (let i = 1; i < polygonPoints.length; i++) {
-        ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
-      }
-      if (mousePos) {
-        ctx.lineTo(mousePos.x, mousePos.y);
-      }
-      ctx.stroke();
-
-      for (const p of polygonPoints) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 4 / scale, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-        ctx.strokeStyle = '#38bdf8';
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
     if (freehandPoints.length > 1) {
       ctx.save();
       const isWand = activeTool === 'magic-wand';
@@ -649,39 +583,9 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       }
       ctx.restore();
     }
-  }, [image, boxSelection, polygonPoints, freehandPoints, mousePos, activeTool, scale, totalW, totalH]);
+  }, [image, boxSelection, freehandPoints, mousePos, activeTool, scale, totalW, totalH]);
 
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    if (activeTool === 'polygon' && polygonPoints.length >= 3 && maskCanvasRef.current) {
-      const maskCtx = maskCanvasRef.current.getContext('2d');
-      if (maskCtx) {
-        if (e.altKey) {
-          maskCtx.globalCompositeOperation = 'destination-out';
-        } else if (e.shiftKey) {
-          maskCtx.globalCompositeOperation = 'source-over';
-          maskCtx.fillStyle = '#ffffff';
-        } else {
-          maskCtx.clearRect(0, 0, totalW, totalH);
-          maskCtx.globalCompositeOperation = 'source-over';
-          maskCtx.fillStyle = '#ffffff';
-        }
-
-        maskCtx.beginPath();
-        maskCtx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
-        for (let i = 1; i < polygonPoints.length; i++) {
-          maskCtx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
-        }
-        maskCtx.closePath();
-        maskCtx.fill();
-
-        setPolygonPoints([]);
-        polygonPointsRef.current = [];
-        isInteractingRef.current = false;
-        setIsInteracting(false);
-        commitMaskCanvas();
-      }
-    }
-  };
+  const handleDoubleClick = () => {};
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -841,13 +745,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
                 }}
               />
             </label>
-
-            <button
-              onClick={onOpenSamples}
-              className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs border border-slate-700 transition"
-            >
-              Референси проєкту
-            </button>
           </div>
         </div>
       )}

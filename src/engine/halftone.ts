@@ -110,7 +110,11 @@ export function renderHalftone(
 
     const S = Math.max(2, dotSize);
     const halfS = S * 0.5;
-    const maxR2 = (S * S * 0.5) * 1.08;
+    // Classic newspaper / newsprint halftone threshold geometry:
+    // Cell diagonal distance squared is 0.5 * S * S.
+    // Capping maxR2 to ~0.94 of cell diagonal (0.47 * S * S) preserves crisp micro-holes in deep blacks
+    // so solid black zones render as dense, tactile newspaper halftone dot fields rather than flat black blocks.
+    const maxR2 = (S * S * 0.5) * 0.94;
     const marginDist = S * 2;
 
     for (let y = 0; y < height; y++) {
@@ -125,17 +129,11 @@ export function renderHalftone(
         }
 
         const sampleVal = lumBytes[i];
-        const darkness = invert ? sampleVal / 255 : (255 - sampleVal) / 255;
+        const rawDarkness = invert ? sampleVal / 255 : (255 - sampleVal) / 255;
 
         // Pure white background
-        if (darkness <= 0.03) {
+        if (rawDarkness <= 0.02) {
           patternPixels32[i] = 0xFFFFFFFF;
-          continue;
-        }
-
-        // Pure solid black
-        if (darkness >= 0.95) {
-          patternPixels32[i] = 0xFF000000;
           continue;
         }
 
@@ -147,7 +145,7 @@ export function renderHalftone(
         let gv = (v % S + S) % S - halfS;
 
         const distSq = gu * gu + gv * gv;
-        const thresholdR2 = darkness * maxR2;
+        const thresholdR2 = rawDarkness * maxR2;
 
         if (distSq <= thresholdR2) {
           patternPixels32[i] = 0xFF000000; // Ink dot (black)
@@ -160,7 +158,7 @@ export function renderHalftone(
           continue;
         }
 
-        // Only evaluate sqrt on the narrow 1-pixel boundary
+        // Only evaluate sqrt on the narrow 1-pixel boundary for smooth anti-aliasing
         const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
         if (edgeDist < 0.9) {
           const grayVal = Math.round(edgeDist * 280);

@@ -1,37 +1,50 @@
 import { HalftoneSettings } from '../types';
 
 /**
- * Applies contrast and brightness adjustments to a normalized luminance value (0..1)
+ * Applies professional S-curve contrast, brightness, gamma, and level adjustments to normalized luminance (0..1)
  */
-export function adjustLuminance(
+export function mapLuminance(
   lum: number,
   contrast: number,
   brightness: number,
   blackThreshold: number,
-  whiteThreshold: number
+  whiteThreshold: number,
+  gamma = 1.0
 ): number {
-  // Apply brightness (-100..100) -> (-0.5..0.5)
-  let val = lum + (brightness / 200);
-  
-  // Apply contrast (-100..100)
-  const factor = (259 * (contrast + 100)) / (100 * (259 - contrast));
-  val = factor * (val - 0.5) + 0.5;
-
-  // Clamp 0..1
+  // Brightness (-50..50) -> (-0.25..0.25)
+  let val = lum + brightness / 200;
   val = Math.max(0, Math.min(1, val));
 
-  // Thresholds mapping
-  const bThresh = blackThreshold / 255;
-  const wThresh = whiteThreshold / 255;
-  
-  if (val <= bThresh) return 0;
-  if (val >= wThresh) return 1;
-  
-  return (val - bThresh) / (wThresh - bThresh);
+  // Levels mapping (black point to white point)
+  const bPoint = blackThreshold / 255;
+  const wPoint = whiteThreshold / 255;
+  if (wPoint > bPoint) {
+    val = Math.max(0, Math.min(1, (val - bPoint) / (wPoint - bPoint)));
+  }
+
+  // Gamma correction for midtone richness
+  if (gamma !== 1.0 && gamma > 0.1) {
+    val = Math.pow(val, 1 / gamma);
+  }
+
+  // Sigmoid / S-curve Contrast boost (-50..100)
+  if (contrast !== 0) {
+    const c = contrast / 100;
+    // S-curve transfer function preserving smooth gray transitions
+    if (c > 0) {
+      val = val < 0.5
+        ? 0.5 * Math.pow(2 * val, 1 + c * 2)
+        : 1 - 0.5 * Math.pow(2 * (1 - val), 1 + c * 2);
+    } else {
+      val = val + c * (val - 0.5) * 0.5;
+    }
+  }
+
+  return Math.max(0, Math.min(1, val));
 }
 
 /**
- * Generates the stylized halftone artwork from the source canvas and selection mask
+ * Generates stylized high-contrast grayscale or halftone raster artwork
  */
 export function renderHalftone(
   sourceCtx: CanvasRenderingContext2D,
@@ -40,70 +53,119 @@ export function renderHalftone(
   height: number,
   settings: HalftoneSettings
 ): void {
-  // Clear target
   targetCtx.clearRect(0, 0, width, height);
 
   const imgData = sourceCtx.getImageData(0, 0, width, height);
   const srcPixels = imgData.data;
 
-  // Create temporary offscreen canvas for crisp rendering
+  // Offscreen canvas for crisp buffer rendering
   const outCanvas = document.createElement('canvas');
   outCanvas.width = width;
   outCanvas.height = height;
   const outCtx = outCanvas.getContext('2d', { willReadFrequently: true });
   if (!outCtx) return;
 
-  // Solid white paper background for the halftone artwork
-  outCtx.fillStyle = '#ffffff';
-  outCtx.fillRect(0, 0, width, height);
-
-  // Set ink color
-  const inkColor = settings.invert ? '#ffffff' : '#0a0a0c';
-  outCtx.fillStyle = inkColor;
-  outCtx.strokeStyle = inkColor;
-
   const {
-    dotSize,
-    spacing,
-    angle,
+    mode,
     contrast,
     brightness,
     blackThreshold,
     whiteThreshold,
-    pattern,
+    gamma = 1.0,
+    grain = 0,
+    dotSize,
+    spacing,
+    angle,
+    halftoneBlend = 50,
+    invert,
   } = settings;
+
+  // 1. Generate High-Contrast Rich Grayscale Base Canvas
+  const grayCanvas = document.createElement('canvas');
+  grayCanvas.width = width;
+  grayCanvas.height = height;
+  const grayCtx = grayCanvas.getContext('2d', { willReadFrequently: true });
+  if (!grayCtx) return;
+
+  const grayImgData = grayCtx.createImageData(width, height);
+  const grayPixels = grayImgData.data;
+  const lumBuffer = new Float32Array(width * height);
+
+  for (let i = 0; i < width * height; i++) {
+    const idx = i * 4;
+    const r = srcPixels[idx];
+    const g = srcPixels[idx + 1];
+    const b = srcPixels[idx + 2];
+    const a = srcPixels[idx + 3] / 255;
+
+    if (a < 0.02) {
+      grayPixels[idx] = 255;
+      grayPixels[idx + 1] = 255;
+      grayPixels[idx + 2] = 255;
+      grayPixels[idx + 3] = 255;
+      lumBuffer[i] = 1.0;
+      continue;
+    }
+
+    // Standard Rec.709 perceptual luminance
+    const rawLum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    let mappedLum = mapLuminance(rawLum, contrast, brightness, blackThreshold, whiteThreshold, gamma);
+
+    // Subtle film grain noise
+    if (grain > 0) {
+      const noise = ((Math.random() - 0.5) * grain) / 255;
+      mappedLum = Math.max(0, Math.min(1, mappedLum + noise));
+    }
+
+    lumBuffer[i] = mappedLum;
+
+    const grayVal = Math.round((invert ? 1 - mappedLum : mappedLum) * 255);
+    grayPixels[idx] = grayVal;
+    grayPixels[idx + 1] = grayVal;
+    grayPixels[idx + 2] = grayVal;
+    grayPixels[idx + 3] = 255;
+  }
+
+  grayCtx.putImageData(grayImgData, 0, 0);
+
+  // If mode is pure high-contrast grayscale, output immediately
+  if (mode === 'grayscale-contrast') {
+    targetCtx.drawImage(grayCanvas, 0, 0);
+    return;
+  }
+
+  // 2. Halftone Screen Pattern Canvas
+  const htPatternCanvas = document.createElement('canvas');
+  htPatternCanvas.width = width;
+  htPatternCanvas.height = height;
+  const htCtx = htPatternCanvas.getContext('2d', { willReadFrequently: true });
+  if (!htCtx) return;
+
+  // Solid white paper base for dots
+  htCtx.fillStyle = '#ffffff';
+  htCtx.fillRect(0, 0, width, height);
+
+  const inkColor = invert ? '#ffffff' : '#000000';
+  htCtx.fillStyle = inkColor;
+  htCtx.strokeStyle = inkColor;
 
   const gridStep = Math.max(2, dotSize * spacing);
   const rad = (angle * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
 
-  // Diagonal bounding to cover entire rotated canvas
   const diag = Math.sqrt(width * width + height * height);
   const minX = -diag;
   const maxX = diag * 2;
   const minY = -diag;
   const maxY = diag * 2;
 
-  // Helper to sample luminance at pixel (px, py)
-  const getPixelLum = (px: number, py: number): number => {
+  const getLum = (px: number, py: number): number => {
     const ix = Math.floor(Math.max(0, Math.min(width - 1, px)));
     const iy = Math.floor(Math.max(0, Math.min(height - 1, py)));
-    const idx = (iy * width + ix) * 4;
-
-    const r = srcPixels[idx];
-    const g = srcPixels[idx + 1];
-    const b = srcPixels[idx + 2];
-    const a = srcPixels[idx + 3] / 255;
-
-    if (a < 0.05) return 1.0;
-
-    // Standard perceptual luminance
-    const rawLum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return adjustLuminance(rawLum, contrast, brightness, blackThreshold, whiteThreshold);
+    return lumBuffer[iy * width + ix];
   };
 
-  // Helper to sample average luminance in a small region
   const getRegionLum = (cx: number, cy: number, radius: number): number => {
     let sum = 0;
     let count = 0;
@@ -111,21 +173,20 @@ export function renderHalftone(
     for (let dy = -radius; dy <= radius; dy += step) {
       for (let dx = -radius; dx <= radius; dx += step) {
         if (dx * dx + dy * dy <= radius * radius) {
-          sum += getPixelLum(cx + dx, cy + dy);
+          sum += getLum(cx + dx, cy + dy);
           count++;
         }
       }
     }
-    return count > 0 ? sum / count : getPixelLum(cx, cy);
+    return count > 0 ? sum / count : getLum(cx, cy);
   };
 
-  if (pattern === 'dots') {
+  if (mode === 'dots' || mode === 'hybrid') {
     const maxRadius = (gridStep / Math.SQRT2) * 1.08;
-    outCtx.beginPath();
+    htCtx.beginPath();
 
     for (let gy = minY; gy < maxY; gy += gridStep) {
       for (let gx = minX; gx < maxX; gx += gridStep) {
-        // Rotate grid coordinates back to image space
         const x = gx * cos - gy * sin;
         const y = gx * sin + gy * cos;
 
@@ -136,36 +197,32 @@ export function renderHalftone(
         const lum = getRegionLum(x, y, gridStep / 2);
         const darkness = 1 - lum;
 
-        if (darkness <= 0.02) continue; // Pure white highlight
+        if (darkness <= 0.02) continue;
 
         if (darkness >= 0.98) {
-          // Solid square for deep shadow
           const half = gridStep / 2;
-          outCtx.rect(x - half, y - half, gridStep, gridStep);
+          htCtx.rect(x - half, y - half, gridStep, gridStep);
         } else {
-          // Halftone circle dot
           const r = maxRadius * Math.sqrt(darkness);
-          outCtx.moveTo(x + r, y);
-          outCtx.arc(x, y, r, 0, Math.PI * 2);
+          htCtx.moveTo(x + r, y);
+          htCtx.arc(x, y, r, 0, Math.PI * 2);
         }
       }
     }
-    outCtx.fill();
-  } else if (pattern === 'crosshatch' || pattern === 'lines' || pattern === 'engraving') {
-    // Line / engraving patterns
-    outCtx.lineWidth = 1;
-    outCtx.lineCap = 'round';
+    htCtx.fill();
+  } else if (mode === 'crosshatch' || mode === 'lines' || mode === 'engraving') {
+    htCtx.lineWidth = 1;
+    htCtx.lineCap = 'round';
 
     for (let gy = minY; gy < maxY; gy += gridStep) {
-      outCtx.beginPath();
+      htCtx.beginPath();
       let isDrawing = false;
 
       for (let gx = minX; gx < maxX; gx += 2) {
         let x = gx * cos - gy * sin;
         let y = gx * sin + gy * cos;
 
-        if (pattern === 'engraving') {
-          // Add subtle wave modulation
+        if (mode === 'engraving') {
           const wave = Math.sin(gx * 0.08) * 3;
           x += -sin * wave;
           y += cos * wave;
@@ -176,28 +233,26 @@ export function renderHalftone(
           continue;
         }
 
-        const lum = getPixelLum(x, y);
+        const lum = getLum(x, y);
         const darkness = 1 - lum;
 
         if (darkness > 0.15) {
           const thickness = Math.max(0.5, darkness * gridStep * 0.9);
-          outCtx.lineWidth = thickness;
-          
+          htCtx.lineWidth = thickness;
           if (!isDrawing) {
-            outCtx.moveTo(x, y);
+            htCtx.moveTo(x, y);
             isDrawing = true;
           } else {
-            outCtx.lineTo(x, y);
+            htCtx.lineTo(x, y);
           }
         } else {
           isDrawing = false;
         }
       }
-      outCtx.stroke();
+      htCtx.stroke();
 
-      // Second angled pass for crosshatch
-      if (pattern === 'crosshatch') {
-        outCtx.beginPath();
+      if (mode === 'crosshatch') {
+        htCtx.beginPath();
         isDrawing = false;
         const rad2 = rad + Math.PI / 2;
         const cos2 = Math.cos(rad2);
@@ -212,34 +267,27 @@ export function renderHalftone(
             continue;
           }
 
-          const lum = getPixelLum(x2, y2);
+          const lum = getLum(x2, y2);
           const darkness = 1 - lum;
 
           if (darkness > 0.4) {
-            outCtx.lineWidth = Math.max(0.5, (darkness - 0.3) * gridStep * 0.7);
+            htCtx.lineWidth = Math.max(0.5, (darkness - 0.3) * gridStep * 0.7);
             if (!isDrawing) {
-              outCtx.moveTo(x2, y2);
+              htCtx.moveTo(x2, y2);
               isDrawing = true;
             } else {
-              outCtx.lineTo(x2, y2);
+              htCtx.lineTo(x2, y2);
             }
           } else {
             isDrawing = false;
           }
         }
-        outCtx.stroke();
+        htCtx.stroke();
       }
     }
-  } else if (pattern === 'dither') {
-    // High-contrast Atkinson Dithering
-    const ditherBuffer = new Float32Array(width * height);
-    for (let i = 0; i < width * height; i++) {
-      const x = i % width;
-      const y = Math.floor(i / width);
-      ditherBuffer[i] = getPixelLum(x, y);
-    }
-
-    const outImg = outCtx.createImageData(width, height);
+  } else if (mode === 'dither') {
+    const ditherBuffer = new Float32Array(lumBuffer);
+    const outImg = htCtx.createImageData(width, height);
     const outData = outImg.data;
 
     for (let y = 0; y < height; y++) {
@@ -251,7 +299,6 @@ export function renderHalftone(
 
         ditherBuffer[idx] = newVal;
 
-        // Atkinson diffusion
         const spread = [
           [1, 0], [2, 0],
           [-1, 1], [0, 1], [1, 1],
@@ -266,16 +313,27 @@ export function renderHalftone(
           }
         }
 
-        const col = newVal === 0 ? (settings.invert ? 255 : 10) : (settings.invert ? 10 : 255);
+        const col = newVal === 0 ? (invert ? 255 : 0) : (invert ? 0 : 255);
         outData[idx * 4] = col;
         outData[idx * 4 + 1] = col;
         outData[idx * 4 + 2] = col;
         outData[idx * 4 + 3] = 255;
       }
     }
-    outCtx.putImageData(outImg, 0, 0);
+    htCtx.putImageData(outImg, 0, 0);
   }
 
-  // Copy result to target context
-  targetCtx.drawImage(outCanvas, 0, 0);
+  // 3. Output Composition
+  if (mode === 'hybrid') {
+    // Blend Grayscale Photo Base + Halftone Pattern Overlay with Multiply
+    outCtx.drawImage(grayCanvas, 0, 0);
+    outCtx.save();
+    outCtx.globalCompositeOperation = 'multiply';
+    outCtx.globalAlpha = Math.max(0, Math.min(1, halftoneBlend / 100));
+    outCtx.drawImage(htPatternCanvas, 0, 0);
+    outCtx.restore();
+    targetCtx.drawImage(outCanvas, 0, 0);
+  } else {
+    targetCtx.drawImage(htPatternCanvas, 0, 0);
+  }
 }

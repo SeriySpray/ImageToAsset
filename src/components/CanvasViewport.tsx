@@ -249,13 +249,48 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     [image, scale, pan]
   );
 
-  // Wheel Zoom
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newScale = Math.max(0.1, Math.min(15, scale * zoomFactor));
-    onUpdateView(newScale, pan);
-  };
+  const scaleRef = useRef(scale);
+  const panRef = useRef(pan);
+  useEffect(() => { scaleRef.current = scale; }, [scale]);
+  useEffect(() => { panRef.current = pan; }, [pan]);
+
+  // Native Non-Passive Wheel Zoom (prevents browser page zoom and zooms strictly around cursor)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      // Smooth zoom multiplier
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+      const currentScale = scaleRef.current;
+      const newScale = Math.max(0.05, Math.min(25, currentScale * zoomFactor));
+
+      // Zoom centered at mouse position
+      const currentPan = panRef.current;
+      const viewCenterX = rect.width / 2 + currentPan.x;
+      const viewCenterY = rect.height / 2 + currentPan.y;
+
+      const dx = mouseX - viewCenterX;
+      const dy = mouseY - viewCenterY;
+
+      const newPanX = currentPan.x - dx * (newScale / currentScale - 1);
+      const newPanY = currentPan.y - dy * (newScale / currentScale - 1);
+
+      onUpdateView(newScale, { x: newPanX, y: newPanY });
+    };
+
+    container.addEventListener('wheel', handleWheelNative, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheelNative);
+    };
+  }, [onUpdateView]);
 
   // Mouse Down
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -620,14 +655,13 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   return (
     <div
       ref={containerRef}
-      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onDoubleClick={handleDoubleClick}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className={`relative flex-1 h-full overflow-hidden flex items-center justify-center select-none ${getCanvasBgClass()} ${
+      className={`relative flex-1 h-full overflow-hidden flex items-center justify-center select-none touch-none ${getCanvasBgClass()} ${
         isPanning ? (isInteracting ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-crosshair'
       }`}
     >

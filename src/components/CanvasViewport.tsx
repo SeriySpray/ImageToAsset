@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ToolType, Point, HalftoneSettings, TornEdgeSettings } from '../types';
 import { renderHalftone } from '../engine/halftone';
-import { renderTornPaperAsset } from '../engine/torn-edge';
+import { renderPaperBacking, renderTornPaperAsset } from '../engine/torn-edge';
 import { magicWandSelect, smartAutoCutout, createFullMask } from '../engine/segmentation';
 
 interface CanvasViewportProps {
@@ -45,6 +45,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const sourceCanvasRef = useRef<HTMLCanvasElement>(null);
   const halftoneCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const paperCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -216,7 +217,38 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     maskCtx.putImageData(imgData, 0, 0);
   }, [image, mask, totalW, totalH]);
 
-  // 1. Pre-render Halftone Texture
+  // Fast GPU Composite of cached Paper + cached Halftone
+  const compositeFinalArtwork = useCallback(() => {
+    if (!image || !halftoneCanvasRef.current || !maskCanvasRef.current || !displayCanvasRef.current || totalW === 0 || totalH === 0) return;
+
+    const dispCanvas = displayCanvasRef.current;
+    dispCanvas.width = totalW;
+    dispCanvas.height = totalH;
+    const dispCtx = dispCanvas.getContext('2d');
+    if (!dispCtx) return;
+
+    renderTornPaperAsset(
+      halftoneCanvasRef.current,
+      dispCtx,
+      maskCanvasRef.current,
+      totalW,
+      totalH,
+      tornEdge,
+      paperCanvasRef.current
+    );
+
+    if (renderedCanvasRef.current) {
+      renderedCanvasRef.current.width = totalW;
+      renderedCanvasRef.current.height = totalH;
+      const refCtx = renderedCanvasRef.current.getContext('2d');
+      if (refCtx) {
+        refCtx.clearRect(0, 0, totalW, totalH);
+        refCtx.drawImage(dispCanvas, 0, 0);
+      }
+    }
+  }, [image, tornEdge, totalW, totalH, renderedCanvasRef]);
+
+  // 1. Layer A: Pre-render Halftone Texture (Runs when style/contrast/dotsize changes)
   useEffect(() => {
     if (!image || !sourceCanvasRef.current || totalW === 0 || totalH === 0) return;
 
@@ -232,38 +264,25 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (!htCtx || !srcCtx) return;
 
     renderHalftone(srcCtx, htCtx, totalW, totalH, halftone);
-    renderFullComposite();
-  }, [image, halftone, pad, totalW, totalH]);
+    compositeFinalArtwork();
+  }, [image, halftone, pad, totalW, totalH, compositeFinalArtwork]);
 
-  // 2. Render Full Composite with Torn Paper Edge
-  const renderFullComposite = useCallback(() => {
-    if (!image || !mask || !halftoneCanvasRef.current || !displayCanvasRef.current || totalW === 0 || totalH === 0) return;
-
-    const dispCanvas = displayCanvasRef.current;
-    dispCanvas.width = totalW;
-    dispCanvas.height = totalH;
-    const dispCtx = dispCanvas.getContext('2d');
-    if (!dispCtx) return;
-
-    renderTornPaperAsset(halftoneCanvasRef.current, dispCtx, mask, totalW, totalH, tornEdge);
-
-    if (renderedCanvasRef.current) {
-      renderedCanvasRef.current.width = totalW;
-      renderedCanvasRef.current.height = totalH;
-      const refCtx = renderedCanvasRef.current.getContext('2d');
-      if (refCtx) {
-        refCtx.clearRect(0, 0, totalW, totalH);
-        refCtx.drawImage(dispCanvas, 0, 0);
-      }
-    }
-  }, [image, mask, tornEdge, totalW, totalH, renderedCanvasRef]);
-
-  // Trigger composite when torn edge settings or mask state update
+  // 2. Layer B: Pre-render Paper Backing (Runs when mask/paper settings change)
   useEffect(() => {
-    if (!isInteracting) {
-      renderFullComposite();
+    if (!image || !mask || totalW === 0 || totalH === 0 || isInteracting) return;
+
+    if (!paperCanvasRef.current) {
+      paperCanvasRef.current = document.createElement('canvas');
     }
-  }, [mask, tornEdge, renderFullComposite, isInteracting]);
+    const pCanvas = paperCanvasRef.current;
+    pCanvas.width = totalW;
+    pCanvas.height = totalH;
+
+    if (tornEdge.enabled) {
+      renderPaperBacking(pCanvas, mask, totalW, totalH, tornEdge);
+    }
+    compositeFinalArtwork();
+  }, [image, mask, tornEdge, pad, totalW, totalH, isInteracting, compositeFinalArtwork]);
 
   // Fast 60-FPS Live Preview during Active Brush/Eraser Stroke
   const renderLiveStrokePreview = useCallback(() => {
@@ -675,6 +694,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         maskCtx.fill();
 
         setPolygonPoints([]);
+        polygonPointsRef.current = [];
         isInteractingRef.current = false;
         setIsInteracting(false);
         commitMaskCanvas();

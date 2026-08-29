@@ -16,6 +16,12 @@ function ensureBuffers(maxDim: number) {
   }
 }
 
+// Distance transform cache
+let cachedMaskRef: Uint8ClampedArray | null = null;
+let cachedDistField: Float32Array | null = null;
+let cachedWidth = 0;
+let cachedHeight = 0;
+
 /**
  * High-performance Euclidean Distance Transform (8SED / Felzenszwalb-Huttenlocher) in O(N) time
  */
@@ -24,6 +30,11 @@ export function computeDistanceTransform(
   width: number,
   height: number
 ): Float32Array {
+  // Check cache
+  if (cachedMaskRef === mask && cachedDistField && cachedWidth === width && cachedHeight === height) {
+    return cachedDistField;
+  }
+
   const size = width * height;
   const dist = new Float32Array(size);
   const INF = 1e9;
@@ -112,56 +123,33 @@ export function computeDistanceTransform(
     }
   }
 
+  // Update cache
+  cachedMaskRef = mask;
+  cachedDistField = dist;
+  cachedWidth = width;
+  cachedHeight = height;
+
   return dist;
 }
 
 const noiseGenerator = new FastNoise(4242);
 
 /**
- * Optimized Torn Paper sticker edge generator and composite renderer
+ * Renders the paper sticker backing with natural deckle edge onto a target canvas
  */
-export function renderTornPaperAsset(
-  halftoneCanvas: HTMLCanvasElement,
-  targetCtx: CanvasRenderingContext2D,
+export function renderPaperBacking(
+  targetCanvas: HTMLCanvasElement,
   maskData: Uint8ClampedArray,
   width: number,
   height: number,
   settings: TornEdgeSettings
 ): void {
-  targetCtx.clearRect(0, 0, width, height);
-
-  if (!settings.enabled) {
-    // If torn edge is disabled, draw halftone clipped directly to mask
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = width;
-    tempCanvas.height = height;
-    const tempCtx = tempCanvas.getContext('2d');
-    if (!tempCtx) return;
-
-    tempCtx.drawImage(halftoneCanvas, 0, 0);
-    const imgData = tempCtx.getImageData(0, 0, width, height);
-    const pixels = imgData.data;
-
-    for (let i = 0; i < width * height; i++) {
-      if (maskData[i] < 128) {
-        pixels[i * 4 + 3] = 0;
-      }
-    }
-    tempCtx.putImageData(imgData, 0, 0);
-    targetCtx.drawImage(tempCanvas, 0, 0);
-    return;
-  }
-
-  // 1. Calculate distance transform from selection mask
-  const distField = computeDistanceTransform(maskData, width, height);
-
-  // 2. Generate paper sticker backing
-  const paperCanvas = document.createElement('canvas');
-  paperCanvas.width = width;
-  paperCanvas.height = height;
-  const paperCtx = paperCanvas.getContext('2d', { willReadFrequently: true });
+  targetCanvas.width = width;
+  targetCanvas.height = height;
+  const paperCtx = targetCanvas.getContext('2d', { willReadFrequently: true });
   if (!paperCtx) return;
 
+  const distField = computeDistanceTransform(maskData, width, height);
   const paperImgData = paperCtx.createImageData(width, height);
   const paperPixels = paperImgData.data;
 
@@ -241,8 +229,44 @@ export function renderTornPaperAsset(
   }
 
   paperCtx.putImageData(paperImgData, 0, 0);
+}
 
-  // 3. Render drop shadow if requested
+/**
+ * Ultra-fast GPU hardware composite of paper backing + halftone artwork clipped by mask
+ */
+export function renderTornPaperAsset(
+  halftoneCanvas: HTMLCanvasElement,
+  targetCtx: CanvasRenderingContext2D,
+  maskCanvas: HTMLCanvasElement | Uint8ClampedArray,
+  width: number,
+  height: number,
+  settings: TornEdgeSettings,
+  preRenderedPaperCanvas?: HTMLCanvasElement | null
+): void {
+  targetCtx.clearRect(0, 0, width, height);
+
+  if (!settings.enabled) {
+    // If torn edge is disabled, draw halftone clipped directly to mask
+    if (maskCanvas instanceof HTMLCanvasElement) {
+      targetCtx.save();
+      targetCtx.drawImage(halftoneCanvas, 0, 0);
+      targetCtx.globalCompositeOperation = 'destination-in';
+      targetCtx.drawImage(maskCanvas, 0, 0);
+      targetCtx.restore();
+    }
+    return;
+  }
+
+  // 1. Get or render paper backing
+  let paperCanvas = preRenderedPaperCanvas;
+  if (!paperCanvas) {
+    paperCanvas = document.createElement('canvas');
+    if (maskCanvas instanceof Uint8ClampedArray) {
+      renderPaperBacking(paperCanvas, maskCanvas, width, height, settings);
+    }
+  }
+
+  // 2. Render drop shadow if requested
   if (settings.dropShadow) {
     targetCtx.save();
     targetCtx.shadowColor = `rgba(0, 0, 0, ${settings.shadowOpacity || 0.35})`;
@@ -253,30 +277,20 @@ export function renderTornPaperAsset(
     targetCtx.restore();
   }
 
-  // 4. Draw paper base
+  // 3. Draw paper base
   targetCtx.drawImage(paperCanvas, 0, 0);
 
-  // 5. Draw halftone artwork clipped strictly inside object mask
-  const clippedArtCanvas = document.createElement('canvas');
-  clippedArtCanvas.width = width;
-  clippedArtCanvas.height = height;
-  const clippedArtCtx = clippedArtCanvas.getContext('2d');
-  if (!clippedArtCtx) return;
-
-  clippedArtCtx.drawImage(halftoneCanvas, 0, 0);
-  const artImgData = clippedArtCtx.getImageData(0, 0, width, height);
-  const artPixels = artImgData.data;
-
-  for (let i = 0; i < width * height; i++) {
-    const m = maskData[i];
-    if (m === 0) {
-      artPixels[i * 4 + 3] = 0;
-    } else if (m < 255) {
-      artPixels[i * 4 + 3] = Math.floor((artPixels[i * 4 + 3] * m) / 255);
+  // 4. Draw halftone artwork clipped strictly inside mask via hardware Canvas 2D
+  if (maskCanvas instanceof HTMLCanvasElement) {
+    const clippedCanvas = document.createElement('canvas');
+    clippedCanvas.width = width;
+    clippedCanvas.height = height;
+    const clipCtx = clippedCanvas.getContext('2d');
+    if (clipCtx) {
+      clipCtx.drawImage(halftoneCanvas, 0, 0);
+      clipCtx.globalCompositeOperation = 'destination-in';
+      clipCtx.drawImage(maskCanvas, 0, 0);
+      targetCtx.drawImage(clippedCanvas, 0, 0);
     }
   }
-  clippedArtCtx.putImageData(artImgData, 0, 0);
-
-  // Composite halftone onto paper
-  targetCtx.drawImage(clippedArtCanvas, 0, 0);
 }

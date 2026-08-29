@@ -7,7 +7,8 @@ import {
   Contrast,
   Eye,
   Layers,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Maximize
 } from 'lucide-react';
 import { HalftoneSettings, TornEdgeSettings, GraphicMode } from '../types';
 
@@ -195,6 +196,26 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 max="30"
                 value={tornEdge.roughness}
                 onChange={(e) => onChangeTornEdge({ roughness: Number(e.target.value) })}
+                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
+              />
+            </div>
+
+            {/* Buffer Padding around Image */}
+            <div>
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="text-slate-300 font-medium flex items-center gap-1">
+                  <Maximize className="w-3.5 h-3.5 text-sky-400" />
+                  Поля полотна (Буфер для обвідки)
+                </span>
+                <span className="font-mono text-sky-400 font-bold">{tornEdge.canvasPadding || 60}px</span>
+              </div>
+              <input
+                type="range"
+                min="20"
+                max="140"
+                step="10"
+                value={tornEdge.canvasPadding || 60}
+                onChange={(e) => onChangeTornEdge({ canvasPadding: Number(e.target.value) })}
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
               />
             </div>

@@ -12,7 +12,7 @@ import { ToolBar } from './components/ToolBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { CanvasViewport } from './components/CanvasViewport';
 import { SampleImagesModal } from './components/SampleImagesModal';
-import { createFullMask, createEmptyMask, smartAutoCutout } from './engine/segmentation';
+import { createEmptyMask, smartAutoCutout } from './engine/segmentation';
 import { renderHalftone } from './engine/halftone';
 import { renderTornPaperAsset } from './engine/torn-edge';
 
@@ -40,21 +40,51 @@ export const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const renderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Load image into memory with initial 100% full visible mask (No auto cutout on load)
+  const pad = tornEdge.canvasPadding || 60;
+  const rawW = image ? (image.naturalWidth || image.width) : 0;
+  const rawH = image ? (image.naturalHeight || image.height) : 0;
+  const totalW = rawW > 0 ? rawW + pad * 2 : 0;
+  const totalH = rawH > 0 ? rawH + pad * 2 : 0;
+
+  // Initialize mask with buffer margin around image
+  const initializePaddedMask = useCallback((width: number, height: number, padding: number) => {
+    const totalWidth = width + padding * 2;
+    const totalHeight = height + padding * 2;
+    const newMask = new Uint8ClampedArray(totalWidth * totalHeight);
+
+    for (let y = padding; y < padding + height; y++) {
+      const rowOffset = y * totalWidth;
+      for (let x = padding; x < padding + width; x++) {
+        newMask[rowOffset + x] = 255;
+      }
+    }
+    return newMask;
+  }, []);
+
+  // Load image into memory with initial 100% full visible image + buffer padding
   const loadImage = useCallback((imgElement: HTMLImageElement, autoCutout = false) => {
     setImage(imgElement);
     const width = imgElement.naturalWidth || imgElement.width;
     const height = imgElement.naturalHeight || imgElement.height;
+    const currentPad = tornEdge.canvasPadding || 60;
 
-    const initialMask = createFullMask(width, height);
+    const initialMask = initializePaddedMask(width, height, currentPad);
+
     if (autoCutout) {
+      const totalWidth = width + currentPad * 2;
+      const totalHeight = height + currentPad * 2;
       const offCanvas = document.createElement('canvas');
-      offCanvas.width = width;
-      offCanvas.height = height;
+      offCanvas.width = totalWidth;
+      offCanvas.height = totalHeight;
       const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
       if (offCtx) {
-        offCtx.drawImage(imgElement, 0, 0);
-        smartAutoCutout(offCtx, initialMask, width, height);
+        offCtx.drawImage(imgElement, currentPad, currentPad, width, height);
+        smartAutoCutout(offCtx, initialMask, totalWidth, totalHeight, {
+          x0: currentPad,
+          y0: currentPad,
+          x1: currentPad + width,
+          y1: currentPad + height,
+        });
       }
     }
 
@@ -65,10 +95,10 @@ export const App: React.FC = () => {
     // Fit to viewport
     const maxW = window.innerWidth - 380;
     const maxH = window.innerHeight - 90;
-    const fitScale = Math.min(1, Math.min(maxW / width, maxH / height) * 0.88);
+    const fitScale = Math.min(1, Math.min(maxW / (width + currentPad * 2), maxH / (height + currentPad * 2)) * 0.88);
     setScale(Math.max(0.15, fitScale));
     setPan({ x: 0, y: 0 });
-  }, []);
+  }, [initializePaddedMask, tornEdge.canvasPadding]);
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -154,17 +184,20 @@ export const App: React.FC = () => {
 
   // On-demand Smart AI Cutout
   const handleSmartAutoCutout = () => {
-    if (!image) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-    const autoMask = createFullMask(width, height);
+    if (!image || totalW === 0 || totalH === 0) return;
+    const autoMask = new Uint8ClampedArray(totalW * totalH);
     const offCanvas = document.createElement('canvas');
-    offCanvas.width = width;
-    offCanvas.height = height;
+    offCanvas.width = totalW;
+    offCanvas.height = totalH;
     const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
     if (offCtx) {
-      offCtx.drawImage(image, 0, 0);
-      smartAutoCutout(offCtx, autoMask, width, height);
+      offCtx.drawImage(image, pad, pad, rawW, rawH);
+      smartAutoCutout(offCtx, autoMask, totalW, totalH, {
+        x0: pad,
+        y0: pad,
+        x1: pad + rawW,
+        y1: pad + rawH,
+      });
       handleUpdateMask(autoMask);
     }
   };
@@ -215,26 +248,25 @@ export const App: React.FC = () => {
   }, [handleUndo, handleRedo]);
 
   const handleInvertMask = () => {
-    if (!mask) return;
+    if (!mask || totalW === 0 || totalH === 0) return;
     const inverted = new Uint8ClampedArray(mask.length);
-    for (let i = 0; i < mask.length; i++) {
-      inverted[i] = 255 - mask[i];
+    for (let y = pad; y < pad + rawH; y++) {
+      const rowOffset = y * totalW;
+      for (let x = pad; x < pad + rawW; x++) {
+        inverted[rowOffset + x] = 255 - mask[rowOffset + x];
+      }
     }
     handleUpdateMask(inverted);
   };
 
   const handleClearMask = () => {
-    if (!image) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-    handleUpdateMask(createEmptyMask(width, height));
+    if (!image || totalW === 0 || totalH === 0) return;
+    handleUpdateMask(createEmptyMask(totalW, totalH));
   };
 
   const handleFillAllMask = () => {
-    if (!image) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-    handleUpdateMask(createFullMask(width, height));
+    if (!image || totalW === 0 || totalH === 0) return;
+    handleUpdateMask(initializePaddedMask(rawW, rawH, pad));
   };
 
   const handleSelectPreset = (preset: Preset) => {
@@ -243,12 +275,57 @@ export const App: React.FC = () => {
     setTornEdge(preset.tornEdge);
   };
 
+  // Helper to trim transparent empty margins with a tight aesthetic border
+  const getTrimmedCanvas = (srcCanvas: HTMLCanvasElement): HTMLCanvasElement => {
+    const w = srcCanvas.width;
+    const h = srcCanvas.height;
+    const ctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return srcCanvas;
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    let found = false;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const alpha = data[(y * w + x) * 4 + 3];
+        if (alpha > 5) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+          found = true;
+        }
+      }
+    }
+
+    if (!found) return srcCanvas;
+
+    const margin = 12;
+    const cropX = Math.max(0, minX - margin);
+    const cropY = Math.max(0, minY - margin);
+    const cropW = Math.min(w - cropX, maxX - minX + 1 + margin * 2);
+    const cropH = Math.min(h - cropY, maxY - minY + 1 + margin * 2);
+
+    const trimmed = document.createElement('canvas');
+    trimmed.width = cropW;
+    trimmed.height = cropH;
+    const trimmedCtx = trimmed.getContext('2d');
+    if (!trimmedCtx) return srcCanvas;
+
+    trimmedCtx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    return trimmed;
+  };
+
   // Copy transparent PNG to clipboard
   const handleCopyToClipboard = async (): Promise<boolean> => {
     if (!renderedCanvasRef.current) return false;
     try {
+      const trimmedCanvas = getTrimmedCanvas(renderedCanvasRef.current);
       const blob = await new Promise<Blob | null>((resolve) =>
-        renderedCanvasRef.current!.toBlob(resolve, 'image/png')
+        trimmedCanvas.toBlob(resolve, 'image/png')
       );
       if (!blob) return false;
 
@@ -264,26 +341,27 @@ export const App: React.FC = () => {
 
   // Export 1x, 2x, 4x
   const handleDownload = (exportScale = 1) => {
-    if (!image || !mask) return;
+    if (!image || !mask || totalW === 0 || totalH === 0) return;
 
-    const origW = image.naturalWidth || image.width;
-    const origH = image.naturalHeight || image.height;
-    const w = origW * exportScale;
-    const h = origH * exportScale;
+    const expW = totalW * exportScale;
+    const expH = totalH * exportScale;
+    const expPad = pad * exportScale;
+    const expRawW = rawW * exportScale;
+    const expRawH = rawH * exportScale;
 
     const srcCanvas = document.createElement('canvas');
-    srcCanvas.width = w;
-    srcCanvas.height = h;
+    srcCanvas.width = expW;
+    srcCanvas.height = expH;
     const srcCtx = srcCanvas.getContext('2d');
     if (!srcCtx) return;
-    srcCtx.drawImage(image, 0, 0, w, h);
+    srcCtx.drawImage(image, expPad, expPad, expRawW, expRawH);
 
-    const scaledMask = new Uint8ClampedArray(w * h);
-    for (let y = 0; y < h; y++) {
+    const scaledMask = new Uint8ClampedArray(expW * expH);
+    for (let y = 0; y < expH; y++) {
       const origY = Math.floor(y / exportScale);
-      for (let x = 0; x < w; x++) {
+      for (let x = 0; x < expW; x++) {
         const origX = Math.floor(x / exportScale);
-        scaledMask[y * w + x] = mask[origY * origW + origX];
+        scaledMask[y * expW + x] = mask[origY * totalW + origX];
       }
     }
 
@@ -300,34 +378,33 @@ export const App: React.FC = () => {
     };
 
     const htCanvas = document.createElement('canvas');
-    htCanvas.width = w;
-    htCanvas.height = h;
+    htCanvas.width = expW;
+    htCanvas.height = expH;
     const htCtx = htCanvas.getContext('2d', { willReadFrequently: true });
     if (!htCtx) return;
 
-    renderHalftone(srcCtx, htCtx, w, h, scaledHalftone);
+    renderHalftone(srcCtx, htCtx, expW, expH, scaledHalftone);
 
     const outCanvas = document.createElement('canvas');
-    outCanvas.width = w;
-    outCanvas.height = h;
+    outCanvas.width = expW;
+    outCanvas.height = expH;
     const outCtx = outCanvas.getContext('2d');
     if (!outCtx) return;
 
-    renderTornPaperAsset(htCanvas, outCtx, scaledMask, w, h, scaledTornEdge);
+    renderTornPaperAsset(htCanvas, outCtx, scaledMask, expW, expH, scaledTornEdge);
 
+    const finalCanvas = getTrimmedCanvas(outCanvas);
     const link = document.createElement('a');
     link.download = `asset_${halftone.mode}_${exportScale}x.png`;
-    link.href = outCanvas.toDataURL('image/png');
+    link.href = finalCanvas.toDataURL('image/png');
     link.click();
   };
 
   const handleResetZoom = () => {
-    if (!image) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
+    if (!image || totalW === 0 || totalH === 0) return;
     const maxW = window.innerWidth - 380;
     const maxH = window.innerHeight - 90;
-    const fitScale = Math.min(1, Math.min(maxW / width, maxH / height) * 0.88);
+    const fitScale = Math.min(1, Math.min(maxW / totalW, maxH / totalH) * 0.88);
     setScale(Math.max(0.15, fitScale));
     setPan({ x: 0, y: 0 });
   };

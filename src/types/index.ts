@@ -25,6 +25,7 @@ export interface TornEdgeSettings {
   enabled: boolean;
   padding: number;         // white border width in px (4 to 60, default 24)
   roughness: number;       // amplitude of noise (0 to 30, default 14)
+  canvasPadding: number;   // buffer pixels around image for border expansion (20 to 120, default 60)
   paperColor: string;      // default '#ffffff'
   paperTexture: boolean;   // subtle paper grain
   dropShadow: boolean;     // display preview shadow

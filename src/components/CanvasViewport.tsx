@@ -64,6 +64,13 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   useEffect(() => { scaleRef.current = scale; }, [scale]);
   useEffect(() => { panRef.current = pan; }, [pan]);
 
+  // Buffer padding around image to allow outer sticker deckle border to expand freely without clipping
+  const pad = tornEdge.canvasPadding || 60;
+  const rawW = image ? (image.naturalWidth || image.width) : 0;
+  const rawH = image ? (image.naturalHeight || image.height) : 0;
+  const totalW = rawW > 0 ? rawW + pad * 2 : 0;
+  const totalH = rawH > 0 ? rawH + pad * 2 : 0;
+
   // Space key for panning
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -86,18 +93,16 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
   // Helper to commit offscreen maskCanvas to Uint8ClampedArray mask state
   const commitMaskCanvas = useCallback(() => {
-    if (!maskCanvasRef.current || !image) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
+    if (!maskCanvasRef.current || !image || totalW === 0 || totalH === 0) return;
     const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
     if (!maskCtx) return;
 
-    const imgData = maskCtx.getImageData(0, 0, width, height);
+    const imgData = maskCtx.getImageData(0, 0, totalW, totalH);
     const pixels = imgData.data;
-    const newMask = new Uint8ClampedArray(width * height);
+    const newMask = new Uint8ClampedArray(totalW * totalH);
 
     let hasChange = false;
-    for (let i = 0; i < width * height; i++) {
+    for (let i = 0; i < totalW * totalH; i++) {
       const alpha = pixels[i * 4 + 3];
       newMask[i] = alpha;
       if (!mask || mask[i] !== alpha) {
@@ -108,9 +113,9 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (hasChange) {
       onUpdateMask(newMask);
     }
-  }, [image, mask, onUpdateMask]);
+  }, [image, mask, totalW, totalH, onUpdateMask]);
 
-  // Global Mouse Up Listener to ensure strokes commit even when releasing outside canvas
+  // Global Mouse Up Listener
   useEffect(() => {
     const handleGlobalMouseUp = () => {
       if (isInteracting) {
@@ -124,7 +129,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [isInteracting, commitMaskCanvas]);
 
-  // Native Non-Passive Wheel Zoom (prevents browser page zoom and zooms strictly around cursor)
+  // Native Non-Passive Wheel Zoom (zooms strictly around cursor)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -160,39 +165,37 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     };
   }, [onUpdateView]);
 
-  // Sync Source Image to Source Canvas
+  // Sync Source Image to Source Canvas with Buffer Padding
   useEffect(() => {
-    if (!image || !sourceCanvasRef.current) return;
+    if (!image || !sourceCanvasRef.current || totalW === 0 || totalH === 0) return;
     const srcCanvas = sourceCanvasRef.current;
-    srcCanvas.width = image.naturalWidth || image.width;
-    srcCanvas.height = image.naturalHeight || image.height;
+    srcCanvas.width = totalW;
+    srcCanvas.height = totalH;
     const ctx = srcCanvas.getContext('2d', { willReadFrequently: true });
     if (ctx) {
-      ctx.clearRect(0, 0, srcCanvas.width, srcCanvas.height);
-      ctx.drawImage(image, 0, 0);
+      ctx.clearRect(0, 0, totalW, totalH);
+      ctx.drawImage(image, pad, pad, rawW, rawH);
     }
-  }, [image]);
+  }, [image, pad, rawW, rawH, totalW, totalH]);
 
   // Sync Mask to Offscreen Mask Canvas
   useEffect(() => {
-    if (!image || !mask) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
+    if (!image || !mask || totalW === 0 || totalH === 0) return;
 
     if (!maskCanvasRef.current) {
       maskCanvasRef.current = document.createElement('canvas');
     }
     const maskCanvas = maskCanvasRef.current;
-    maskCanvas.width = width;
-    maskCanvas.height = height;
+    maskCanvas.width = totalW;
+    maskCanvas.height = totalH;
     const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
     if (!maskCtx) return;
 
-    const imgData = maskCtx.createImageData(width, height);
+    const imgData = maskCtx.createImageData(totalW, totalH);
     const pixels = imgData.data;
 
-    for (let i = 0; i < width * height; i++) {
-      const v = mask[i];
+    for (let i = 0; i < totalW * totalH; i++) {
+      const v = mask[i] || 0;
       const idx = i * 4;
       pixels[idx] = 255;
       pixels[idx + 1] = 255;
@@ -200,53 +203,49 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       pixels[idx + 3] = v;
     }
     maskCtx.putImageData(imgData, 0, 0);
-  }, [image, mask]);
+  }, [image, mask, totalW, totalH]);
 
   // 1. Pre-render Halftone Texture
   useEffect(() => {
-    if (!image || !sourceCanvasRef.current) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
+    if (!image || !sourceCanvasRef.current || totalW === 0 || totalH === 0) return;
 
     if (!halftoneCanvasRef.current) {
       halftoneCanvasRef.current = document.createElement('canvas');
     }
     const htCanvas = halftoneCanvasRef.current;
-    htCanvas.width = width;
-    htCanvas.height = height;
+    htCanvas.width = totalW;
+    htCanvas.height = totalH;
     const htCtx = htCanvas.getContext('2d', { willReadFrequently: true });
     const srcCtx = sourceCanvasRef.current.getContext('2d', { willReadFrequently: true });
 
     if (!htCtx || !srcCtx) return;
 
-    renderHalftone(srcCtx, htCtx, width, height, halftone);
+    renderHalftone(srcCtx, htCtx, totalW, totalH, halftone);
     renderFullComposite();
-  }, [image, halftone]);
+  }, [image, halftone, pad, totalW, totalH]);
 
   // 2. Render Full Composite with Torn Paper Edge
   const renderFullComposite = useCallback(() => {
-    if (!image || !mask || !halftoneCanvasRef.current || !displayCanvasRef.current) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
+    if (!image || !mask || !halftoneCanvasRef.current || !displayCanvasRef.current || totalW === 0 || totalH === 0) return;
 
     const dispCanvas = displayCanvasRef.current;
-    dispCanvas.width = width;
-    dispCanvas.height = height;
+    dispCanvas.width = totalW;
+    dispCanvas.height = totalH;
     const dispCtx = dispCanvas.getContext('2d');
     if (!dispCtx) return;
 
-    renderTornPaperAsset(halftoneCanvasRef.current, dispCtx, mask, width, height, tornEdge);
+    renderTornPaperAsset(halftoneCanvasRef.current, dispCtx, mask, totalW, totalH, tornEdge);
 
     if (renderedCanvasRef.current) {
-      renderedCanvasRef.current.width = width;
-      renderedCanvasRef.current.height = height;
+      renderedCanvasRef.current.width = totalW;
+      renderedCanvasRef.current.height = totalH;
       const refCtx = renderedCanvasRef.current.getContext('2d');
       if (refCtx) {
-        refCtx.clearRect(0, 0, width, height);
+        refCtx.clearRect(0, 0, totalW, totalH);
         refCtx.drawImage(dispCanvas, 0, 0);
       }
     }
-  }, [image, mask, tornEdge, renderedCanvasRef]);
+  }, [image, mask, tornEdge, totalW, totalH, renderedCanvasRef]);
 
   // Trigger composite when torn edge settings or mask state update
   useEffect(() => {
@@ -257,48 +256,42 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
   // Fast 60-FPS Live Preview during Active Brush/Eraser Stroke
   const renderLiveStrokePreview = useCallback(() => {
-    if (!displayCanvasRef.current || !halftoneCanvasRef.current || !maskCanvasRef.current) return;
+    if (!displayCanvasRef.current || !halftoneCanvasRef.current || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
     const dispCtx = displayCanvasRef.current.getContext('2d');
     if (!dispCtx) return;
 
-    const width = displayCanvasRef.current.width;
-    const height = displayCanvasRef.current.height;
-
-    dispCtx.clearRect(0, 0, width, height);
+    dispCtx.clearRect(0, 0, totalW, totalH);
     dispCtx.drawImage(halftoneCanvasRef.current, 0, 0);
     dispCtx.globalCompositeOperation = 'destination-in';
     dispCtx.drawImage(maskCanvasRef.current, 0, 0);
     dispCtx.globalCompositeOperation = 'source-over';
-  }, []);
+  }, [totalW, totalH]);
 
-  // Convert screen mouse coordinates to image pixel coordinates
+  // Convert screen mouse coordinates to image pixel coordinates (within padded total bounds)
   const screenToImage = useCallback(
     (clientX: number, clientY: number): Point | null => {
-      if (!containerRef.current || !image) return null;
+      if (!containerRef.current || !image || totalW === 0 || totalH === 0) return null;
       const rect = containerRef.current.getBoundingClientRect();
       const cx = clientX - rect.left;
       const cy = clientY - rect.top;
 
-      const imgWidth = image.naturalWidth || image.width;
-      const imgHeight = image.naturalHeight || image.height;
-
       const viewCenterX = rect.width / 2 + pan.x;
       const viewCenterY = rect.height / 2 + pan.y;
 
-      const imgLeft = viewCenterX - (imgWidth * scale) / 2;
-      const imgTop = viewCenterY - (imgHeight * scale) / 2;
+      const imgLeft = viewCenterX - (totalW * scale) / 2;
+      const imgTop = viewCenterY - (totalH * scale) / 2;
 
       const x = (cx - imgLeft) / scale;
       const y = (cy - imgTop) / scale;
 
       return { x, y };
     },
-    [image, scale, pan]
+    [image, scale, pan, totalW, totalH]
   );
 
   // Mouse Down
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!image || !maskCanvasRef.current) return;
+    if (!image || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
 
     if (e.button === 1 || isSpacePressed || activeTool === 'pan') {
       setIsInteracting(true);
@@ -362,16 +355,14 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       }
       setPolygonPoints((prev) => [...prev, pt]);
     } else if (activeTool === 'magic-wand' && sourceCanvasRef.current) {
-      const width = image.naturalWidth || image.width;
-      const height = image.naturalHeight || image.height;
-      const targetMask = mask ? new Uint8ClampedArray(mask) : createFullMask(width, height);
+      const targetMask = mask ? new Uint8ClampedArray(mask) : createFullMask(totalW, totalH);
       const mode = e.altKey ? 'subtract' : (e.shiftKey ? 'add' : 'replace');
 
       magicWandSelect(
         sourceCanvasRef.current.getContext('2d', { willReadFrequently: true })!,
         targetMask,
-        width,
-        height,
+        totalW,
+        totalH,
         pt.x,
         pt.y,
         wandTolerance,
@@ -440,7 +431,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     dragStartRef.current = null;
     lastPointRef.current = null;
 
-    if (!image || !maskCanvasRef.current) return;
+    if (!image || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
     const maskCtx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
     if (!maskCtx) return;
 
@@ -459,25 +450,23 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       setBoxSelection(null);
       commitMaskCanvas();
     } else if (activeTool === 'auto-cutout' && boxSelection && sourceCanvasRef.current) {
-      const width = image.naturalWidth || image.width;
-      const height = image.naturalHeight || image.height;
-      const autoMask = new Uint8ClampedArray(width * height);
+      const autoMask = new Uint8ClampedArray(totalW * totalH);
 
       smartAutoCutout(
         sourceCanvasRef.current.getContext('2d')!,
         autoMask,
-        width,
-        height,
+        totalW,
+        totalH,
         boxSelection
       );
 
       const autoCanvas = document.createElement('canvas');
-      autoCanvas.width = width;
-      autoCanvas.height = height;
+      autoCanvas.width = totalW;
+      autoCanvas.height = totalH;
       const autoCtx = autoCanvas.getContext('2d');
       if (autoCtx) {
-        const imgD = autoCtx.createImageData(width, height);
-        for (let i = 0; i < width * height; i++) {
+        const imgD = autoCtx.createImageData(totalW, totalH);
+        for (let i = 0; i < totalW * totalH; i++) {
           if (autoMask[i] > 0) {
             imgD.data[i * 4] = 255;
             imgD.data[i * 4 + 1] = 255;
@@ -511,16 +500,14 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
   // Render Vector Selection Overlay
   useEffect(() => {
-    if (!image || !overlayCanvasRef.current) return;
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
+    if (!image || !overlayCanvasRef.current || totalW === 0 || totalH === 0) return;
     const canvas = overlayCanvasRef.current;
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = totalW;
+    canvas.height = totalH;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, totalW, totalH);
 
     if (boxSelection && (activeTool === 'box-select' || activeTool === 'auto-cutout')) {
       const minX = Math.min(boxSelection.x0, boxSelection.x1);
@@ -576,7 +563,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       ctx.stroke();
       ctx.restore();
     }
-  }, [image, boxSelection, polygonPoints, freehandPoints, mousePos, activeTool, scale]);
+  }, [image, boxSelection, polygonPoints, freehandPoints, mousePos, activeTool, scale, totalW, totalH]);
 
   const handleDoubleClick = () => {
     if (activeTool === 'polygon' && polygonPoints.length >= 3 && maskCanvasRef.current) {
@@ -644,9 +631,11 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       <canvas ref={sourceCanvasRef} className="hidden" />
 
       {/* Main Interactive Stage */}
-      {image ? (
+      {image && totalW > 0 && totalH > 0 ? (
         <div
           style={{
+            width: totalW,
+            height: totalH,
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
             transformOrigin: 'center center',
             transition: isInteracting ? 'none' : 'transform 0.05s ease-out',
@@ -655,12 +644,15 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         >
           {/* Split Screen Mode */}
           {showSplitView ? (
-            <div className="relative overflow-hidden" style={{ width: image.naturalWidth, height: image.naturalHeight }}>
-              <img
-                src={image.src}
-                alt="Original"
-                className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-              />
+            <div className="relative overflow-hidden w-full h-full">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <img
+                  src={image.src}
+                  alt="Original"
+                  style={{ width: rawW, height: rawH, left: pad, top: pad }}
+                  className="absolute object-contain pointer-events-none"
+                />
+              </div>
               <div
                 className="absolute inset-0 overflow-hidden"
                 style={{
@@ -681,14 +673,14 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
           ) : (
             <canvas
               ref={displayCanvasRef}
-              className="block pointer-events-none"
+              className="block pointer-events-none w-full h-full"
             />
           )}
 
           {/* Interactive Selection Overlay */}
           <canvas
             ref={overlayCanvasRef}
-            className="absolute inset-0 pointer-events-none z-10"
+            className="absolute inset-0 pointer-events-none z-10 w-full h-full"
           />
 
           {/* High-Visibility Brush & Eraser Circle Cursor */}

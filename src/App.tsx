@@ -231,12 +231,19 @@ export const App: React.FC = () => {
     const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
     if (offCtx) {
       offCtx.drawImage(image, pad, pad, rawW, rawH);
-      smartAutoCutout(offCtx, autoMask, totalW, totalH, {
-        x0: pad,
-        y0: pad,
-        x1: pad + rawW,
-        y1: pad + rawH,
-      });
+      smartAutoCutout(
+        offCtx,
+        autoMask,
+        totalW,
+        totalH,
+        {
+          x0: pad,
+          y0: pad,
+          x1: pad + rawW,
+          y1: pad + rawH,
+        },
+        mask
+      );
       handleUpdateMask(autoMask);
     }
     const t1 = performance.now();

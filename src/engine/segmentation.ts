@@ -125,97 +125,166 @@ export function magicWandSelect(
 }
 
 /**
- * Intelligent Smart Foreground Cutout:
- * Isolates foreground object from background on demand
+ * Intelligent Smart Foreground Cutout Engine:
+ * Analyzes current user edits or full photo to extract and isolate the subject from background
  */
 export function smartAutoCutout(
   srcCtx: CanvasRenderingContext2D,
   mask: Uint8ClampedArray,
-  width: number,
-  height: number,
-  boundBox?: { x0: number; y0: number; x1: number; y1: number }
+  totalWidth: number,
+  totalHeight: number,
+  boundBox?: { x0: number; y0: number; x1: number; y1: number },
+  currentMask?: Uint8ClampedArray | null
 ): void {
-  const imgData = srcCtx.getImageData(0, 0, width, height);
+  const imgData = srcCtx.getImageData(0, 0, totalWidth, totalHeight);
   const pixels = imgData.data;
 
   const minX = boundBox ? Math.max(0, Math.floor(Math.min(boundBox.x0, boundBox.x1))) : 0;
-  const maxX = boundBox ? Math.min(width - 1, Math.ceil(Math.max(boundBox.x0, boundBox.x1))) : width - 1;
+  const maxX = boundBox ? Math.min(totalWidth - 1, Math.ceil(Math.max(boundBox.x0, boundBox.x1))) : totalWidth - 1;
   const minY = boundBox ? Math.max(0, Math.floor(Math.min(boundBox.y0, boundBox.y1))) : 0;
-  const maxY = boundBox ? Math.min(height - 1, Math.ceil(Math.max(boundBox.y0, boundBox.y1))) : height - 1;
+  const maxY = boundBox ? Math.min(totalHeight - 1, Math.ceil(Math.max(boundBox.y0, boundBox.y1))) : totalHeight - 1;
 
-  // Check if image already has native alpha channel
-  let hasAlpha = false;
-  for (let i = 3; i < pixels.length; i += 16) {
-    if (pixels[i] < 200) {
-      hasAlpha = true;
-      break;
-    }
-  }
+  const boxW = maxX - minX + 1;
+  const boxH = maxY - minY + 1;
+  const totalBoxPixels = boxW * boxH;
+  if (totalBoxPixels < 16) return;
 
-  if (hasAlpha) {
+  // 1. Check if user already performed manual edits (erased/painted areas)
+  let userActiveCount = 0;
+  if (currentMask) {
     for (let y = minY; y <= maxY; y++) {
-      const rowOffset = y * width;
+      const rowOffset = y * totalWidth;
       for (let x = minX; x <= maxX; x++) {
-        const a = pixels[(rowOffset + x) * 4 + 3];
-        mask[rowOffset + x] = a >= 128 ? 255 : 0;
+        if (currentMask[rowOffset + x] > 128) userActiveCount++;
       }
     }
-    return;
   }
 
-  // Sample border pixels to establish background color model
-  const bgSamples: { r: number; g: number; b: number }[] = [];
-  const addSample = (x: number, y: number) => {
-    const idx = (y * width + x) * 4;
-    bgSamples.push({ r: pixels[idx], g: pixels[idx + 1], b: pixels[idx + 2] });
-  };
+  const isPartiallyEdited = currentMask && userActiveCount > 0.03 * totalBoxPixels && userActiveCount < 0.97 * totalBoxPixels;
 
-  for (let x = minX; x <= maxX; x += 4) {
-    addSample(x, minY);
-    addSample(x, maxY);
-  }
-  for (let y = minY; y <= maxY; y += 4) {
-    addSample(minX, y);
-    addSample(maxX, y);
+  // 2. Precompute luminance and Sobel edge gradient magnitude
+  const lum = new Uint8Array(totalWidth * totalHeight);
+  for (let y = minY; y <= maxY; y++) {
+    const rowOffset = y * totalWidth;
+    for (let x = minX; x <= maxX; x++) {
+      const idx = (rowOffset + x) * 4;
+      lum[rowOffset + x] = (pixels[idx] * 54 + pixels[idx + 1] * 183 + pixels[idx + 2] * 19) >> 8;
+    }
   }
 
-  // Distance to background samples
-  const isBgColor = (x: number, y: number): boolean => {
-    const idx = (y * width + x) * 4;
+  const grad = new Uint8Array(totalWidth * totalHeight);
+  for (let y = minY + 1; y < maxY; y++) {
+    const rowOffset = y * totalWidth;
+    for (let x = minX + 1; x < maxX; x++) {
+      const gx = Math.abs(lum[rowOffset + x + 1] - lum[rowOffset + x - 1]);
+      const gy = Math.abs(lum[(y + 1) * totalWidth + x] - lum[(y - 1) * totalWidth + x]);
+      grad[rowOffset + x] = Math.min(255, gx + gy);
+    }
+  }
+
+  // 3. Build Background Color Clusters
+  const bgClusters: { r: number; g: number; b: number; count: number }[] = [];
+
+  const addBgSample = (x: number, y: number) => {
+    const idx = (y * totalWidth + x) * 4;
+    const a = pixels[idx + 3];
+    if (a < 15) return; // Skip transparent padding
+
     const r = pixels[idx];
     const g = pixels[idx + 1];
     const b = pixels[idx + 2];
 
-    for (const bg of bgSamples) {
-      const dr = r - bg.r;
-      const dg = g - bg.g;
-      const db = b - bg.b;
-      if (dr * dr + dg * dg + db * db < 1800) {
+    let bestDist = Infinity;
+    let bestCluster: { r: number; g: number; b: number; count: number } | null = null;
+
+    for (const c of bgClusters) {
+      const dr = r - c.r;
+      const dg = g - c.g;
+      const db = b - c.b;
+      const d = dr * dr + dg * dg + db * db;
+      if (d < bestDist) {
+        bestDist = d;
+        bestCluster = c;
+      }
+    }
+
+    if (bestCluster && bestDist < 1200) {
+      bestCluster.r = Math.round((bestCluster.r * bestCluster.count + r) / (bestCluster.count + 1));
+      bestCluster.g = Math.round((bestCluster.g * bestCluster.count + g) / (bestCluster.count + 1));
+      bestCluster.b = Math.round((bestCluster.b * bestCluster.count + b) / (bestCluster.count + 1));
+      bestCluster.count++;
+    } else if (bgClusters.length < 24) {
+      bgClusters.push({ r, g, b, count: 1 });
+    }
+  };
+
+  // Sample along perimeter of the target box
+  const step = Math.max(1, Math.floor(Math.min(boxW, boxH) / 60));
+  for (let x = minX; x <= maxX; x += step) {
+    addBgSample(x, minY);
+    addBgSample(x, Math.min(maxY, minY + 3));
+    addBgSample(x, maxY);
+    addBgSample(x, Math.max(minY, maxY - 3));
+  }
+  for (let y = minY; y <= maxY; y += step) {
+    addBgSample(minX, y);
+    addBgSample(Math.min(maxX, minX + 3), y);
+    addBgSample(maxX, y);
+    addBgSample(Math.max(minX, maxX - 3), y);
+  }
+
+  // Check if pixel color matches background clusters
+  const isBackgroundLike = (x: number, y: number, toleranceSq = 2400): boolean => {
+    const idx = (y * totalWidth + x) * 4;
+    const a = pixels[idx + 3];
+    if (a < 15) return true; // Transparent is always background
+
+    const r = pixels[idx];
+    const g = pixels[idx + 1];
+    const b = pixels[idx + 2];
+
+    for (const c of bgClusters) {
+      const dr = r - c.r;
+      const dg = g - c.g;
+      const db = b - c.b;
+      if (dr * dr + dg * dg + db * db <= toleranceSq) {
         return true;
       }
     }
     return false;
   };
 
-  // Connected Background Flood-Fill from perimeter
-  const isBg = new Uint8Array(width * height);
+  // 4. Connected Background Flood Fill
+  const isBg = new Uint8Array(totalWidth * totalHeight);
   const queue: number[] = [];
 
-  const pushPixel = (x: number, y: number) => {
-    const idx = y * width + x;
-    if (!isBg[idx] && isBgColor(x, y)) {
+  const pushBgSeed = (x: number, y: number) => {
+    const idx = y * totalWidth + x;
+    if (!isBg[idx] && isBackgroundLike(x, y, 3600)) {
       isBg[idx] = 1;
       queue.push(x, y);
     }
   };
 
   for (let x = minX; x <= maxX; x++) {
-    pushPixel(x, minY);
-    pushPixel(x, maxY);
+    pushBgSeed(x, minY);
+    pushBgSeed(x, maxY);
   }
   for (let y = minY; y <= maxY; y++) {
-    pushPixel(minX, y);
-    pushPixel(maxX, y);
+    pushBgSeed(minX, y);
+    pushBgSeed(maxX, y);
+  }
+
+  if (isPartiallyEdited && currentMask) {
+    for (let y = minY; y <= maxY; y += 2) {
+      const rowOffset = y * totalWidth;
+      for (let x = minX; x <= maxX; x += 2) {
+        if (currentMask[rowOffset + x] === 0 && !isBg[rowOffset + x]) {
+          isBg[rowOffset + x] = 1;
+          queue.push(x, y);
+        }
+      }
+    }
   }
 
   let head = 0;
@@ -232,20 +301,94 @@ export function smartAutoCutout(
 
     for (const [nx, ny] of neighbors) {
       if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) {
-        const nidx = ny * width + nx;
-        if (!isBg[nidx] && isBgColor(nx, ny)) {
-          isBg[nidx] = 1;
-          queue.push(nx, ny);
+        const nidx = ny * totalWidth + nx;
+        if (!isBg[nidx]) {
+          const edgeMag = grad[nidx];
+          if (edgeMag < 55 && isBackgroundLike(nx, ny, 2800)) {
+            isBg[nidx] = 1;
+            queue.push(nx, ny);
+          }
         }
       }
     }
   }
 
-  // Everything not connected to the background is the subject
+  // 5. Initial Subject Candidate
+  const isSubject = new Uint8Array(totalWidth * totalHeight);
   for (let y = minY; y <= maxY; y++) {
-    const rowOffset = y * width;
+    const rowOffset = y * totalWidth;
     for (let x = minX; x <= maxX; x++) {
-      mask[rowOffset + x] = isBg[rowOffset + x] ? 0 : 255;
+      isSubject[rowOffset + x] = isBg[rowOffset + x] ? 0 : 1;
+    }
+  }
+
+  // 6. Connected Component Analysis to Keep Only the Main Subject (Remove noise speckles)
+  const labels = new Int32Array(totalWidth * totalHeight);
+  let currentLabel = 0;
+  const componentSizes: number[] = [0];
+
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      const idx = y * totalWidth + x;
+      if (isSubject[idx] && labels[idx] === 0) {
+        currentLabel++;
+        let size = 0;
+
+        const compQueue = [x, y];
+        labels[idx] = currentLabel;
+
+        let compHead = 0;
+        while (compHead < compQueue.length) {
+          const cx = compQueue[compHead++];
+          const cy = compQueue[compHead++];
+          size++;
+
+          const nbs = [
+            [cx + 1, cy],
+            [cx - 1, cy],
+            [cx, cy + 1],
+            [cx, cy - 1]
+          ];
+          for (const [nx, ny] of nbs) {
+            if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) {
+              const nidx = ny * totalWidth + nx;
+              if (isSubject[nidx] && labels[nidx] === 0) {
+                labels[nidx] = currentLabel;
+                compQueue.push(nx, ny);
+              }
+            }
+          }
+        }
+
+        componentSizes.push(size);
+      }
+    }
+  }
+
+  let maxCompSize = 0;
+  for (let l = 1; l <= currentLabel; l++) {
+    if (componentSizes[l] > maxCompSize) {
+      maxCompSize = componentSizes[l];
+    }
+  }
+
+  // Keep significant foreground components (> 8% of max component)
+  const validLabels = new Set<number>();
+  for (let l = 1; l <= currentLabel; l++) {
+    if (componentSizes[l] >= maxCompSize * 0.08) {
+      validLabels.add(l);
+    }
+  }
+
+  // 7. Write clean isolated subject mask
+  mask.fill(0);
+  for (let y = minY; y <= maxY; y++) {
+    const rowOffset = y * totalWidth;
+    for (let x = minX; x <= maxX; x++) {
+      const l = labels[rowOffset + x];
+      if (l > 0 && validLabels.has(l)) {
+        mask[rowOffset + x] = 255;
+      }
     }
   }
 }

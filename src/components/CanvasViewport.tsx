@@ -547,7 +547,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         autoMask,
         totalW,
         totalH,
-        curBox
+        curBox,
+        mask
       );
 
       // Isolate auto-cutout subject by replacing mask

@@ -17,7 +17,7 @@ import { renderHalftone } from './engine/halftone';
 import { renderTornPaperAsset } from './engine/torn-edge';
 
 export const App: React.FC = () => {
-  const [currentPresetId, setCurrentPresetId] = useState<string>('vintage-reference');
+  const [currentPresetId, setCurrentPresetId] = useState<string>('grayscale-rich');
   const [halftone, setHalftone] = useState<HalftoneSettings>(PRESETS[0].halftone);
   const [tornEdge, setTornEdge] = useState<TornEdgeSettings>(PRESETS[0].tornEdge);
 
@@ -40,8 +40,8 @@ export const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const renderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Load an image file into memory and initialize mask
-  const loadImage = useCallback((imgElement: HTMLImageElement, autoCutout = true) => {
+  // Load image into memory with initial 100% full visible mask (No auto cutout on load)
+  const loadImage = useCallback((imgElement: HTMLImageElement, autoCutout = false) => {
     setImage(imgElement);
     const width = imgElement.naturalWidth || imgElement.width;
     const height = imgElement.naturalHeight || imgElement.height;
@@ -62,11 +62,11 @@ export const App: React.FC = () => {
     setUndoStack([]);
     setRedoStack([]);
 
-    // Fit to screen nicely
-    const maxW = window.innerWidth - 420;
-    const maxH = window.innerHeight - 100;
+    // Fit to viewport
+    const maxW = window.innerWidth - 380;
+    const maxH = window.innerHeight - 90;
     const fitScale = Math.min(1, Math.min(maxW / width, maxH / height) * 0.88);
-    setScale(Math.max(0.2, fitScale));
+    setScale(Math.max(0.15, fitScale));
     setPan({ x: 0, y: 0 });
   }, []);
 
@@ -77,7 +77,7 @@ export const App: React.FC = () => {
       if (typeof e.target?.result === 'string') {
         const img = new Image();
         img.crossOrigin = 'anonymous';
-        img.onload = () => loadImage(img, true);
+        img.onload = () => loadImage(img, false);
         img.src = e.target.result;
       }
     };
@@ -88,7 +88,7 @@ export const App: React.FC = () => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      loadImage(img, true);
+      loadImage(img, false);
       if (presetId) {
         const preset = PRESETS.find((p) => p.id === presetId);
         if (preset) {
@@ -101,12 +101,12 @@ export const App: React.FC = () => {
     img.src = samplePath;
   };
 
-  // Automatically load the first reference image on launch
+  // Automatically load the books sample on launch
   useEffect(() => {
-    handleSelectSample('/samples/books_reference.jpg', 'high-contrast-books');
+    handleSelectSample('/samples/books_reference.jpg', 'grayscale-rich');
   }, []);
 
-  // Global Paste (Ctrl+V) handler
+  // Global Paste (Ctrl+V)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
@@ -123,7 +123,53 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('paste', handlePaste);
   }, [loadImage]);
 
-  // Global Keyboard Shortcuts
+  // Mask Update with Undo Stack preservation
+  const handleUpdateMask = useCallback((newMask: Uint8ClampedArray) => {
+    setMask((currentMask) => {
+      if (currentMask) {
+        setUndoStack((prev) => [...prev.slice(-35), new Uint8ClampedArray(currentMask)]);
+        setRedoStack([]);
+      }
+      return newMask;
+    });
+  }, []);
+
+  // Undo
+  const handleUndo = useCallback(() => {
+    if (undoStack.length === 0 || !mask) return;
+    const prev = undoStack[undoStack.length - 1];
+    setRedoStack((r) => [...r, new Uint8ClampedArray(mask)]);
+    setUndoStack((u) => u.slice(0, -1));
+    setMask(prev);
+  }, [undoStack, mask]);
+
+  // Redo
+  const handleRedo = useCallback(() => {
+    if (redoStack.length === 0 || !mask) return;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack((u) => [...u, new Uint8ClampedArray(mask)]);
+    setRedoStack((r) => r.slice(0, -1));
+    setMask(next);
+  }, [redoStack, mask]);
+
+  // On-demand Smart AI Cutout
+  const handleSmartAutoCutout = () => {
+    if (!image) return;
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    const autoMask = createFullMask(width, height);
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = width;
+    offCanvas.height = height;
+    const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+    if (offCtx) {
+      offCtx.drawImage(image, 0, 0);
+      smartAutoCutout(offCtx, autoMask, width, height);
+      handleUpdateMask(autoMask);
+    }
+  };
+
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT') {
@@ -145,8 +191,6 @@ export const App: React.FC = () => {
         handleCopyToClipboard();
       } else if (e.key.toLowerCase() === 'h') {
         setActiveTool('pan');
-      } else if (e.key.toLowerCase() === 'a') {
-        setActiveTool('auto-cutout');
       } else if (e.key.toLowerCase() === 'm') {
         setActiveTool('box-select');
       } else if (e.key.toLowerCase() === 'l') {
@@ -168,31 +212,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mask, undoStack, redoStack]);
-
-  // Mask Update with Undo Stack preservation
-  const handleUpdateMask = (newMask: Uint8ClampedArray) => {
-    if (!mask) return;
-    setUndoStack((prev) => [...prev.slice(-25), new Uint8ClampedArray(mask)]);
-    setRedoStack([]);
-    setMask(newMask);
-  };
-
-  const handleUndo = () => {
-    if (undoStack.length === 0 || !mask) return;
-    const prev = undoStack[undoStack.length - 1];
-    setRedoStack((r) => [...r, new Uint8ClampedArray(mask)]);
-    setUndoStack((u) => u.slice(0, -1));
-    setMask(prev);
-  };
-
-  const handleRedo = () => {
-    if (redoStack.length === 0 || !mask) return;
-    const next = redoStack[redoStack.length - 1];
-    setUndoStack((u) => [...u, new Uint8ClampedArray(mask)]);
-    setRedoStack((r) => r.slice(0, -1));
-    setMask(next);
-  };
+  }, [handleUndo, handleRedo]);
 
   const handleInvertMask = () => {
     if (!mask) return;
@@ -223,7 +243,7 @@ export const App: React.FC = () => {
     setTornEdge(preset.tornEdge);
   };
 
-  // Copy transparent PNG directly to OS clipboard
+  // Copy transparent PNG to clipboard
   const handleCopyToClipboard = async (): Promise<boolean> => {
     if (!renderedCanvasRef.current) return false;
     try {
@@ -242,7 +262,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // High-Resolution Export (1x, 2x, 4x)
+  // Export 1x, 2x, 4x
   const handleDownload = (exportScale = 1) => {
     if (!image || !mask) return;
 
@@ -251,7 +271,6 @@ export const App: React.FC = () => {
     const w = origW * exportScale;
     const h = origH * exportScale;
 
-    // 1. Source scale canvas
     const srcCanvas = document.createElement('canvas');
     srcCanvas.width = w;
     srcCanvas.height = h;
@@ -259,7 +278,6 @@ export const App: React.FC = () => {
     if (!srcCtx) return;
     srcCtx.drawImage(image, 0, 0, w, h);
 
-    // 2. Scaled Mask
     const scaledMask = new Uint8ClampedArray(w * h);
     for (let y = 0; y < h; y++) {
       const origY = Math.floor(y / exportScale);
@@ -269,13 +287,11 @@ export const App: React.FC = () => {
       }
     }
 
-    // 3. Scaled Halftone Settings
     const scaledHalftone: HalftoneSettings = {
       ...halftone,
       dotSize: halftone.dotSize * exportScale,
     };
 
-    // 4. Scaled Torn Edge Settings
     const scaledTornEdge: TornEdgeSettings = {
       ...tornEdge,
       padding: tornEdge.padding * exportScale,
@@ -283,7 +299,6 @@ export const App: React.FC = () => {
       frequency: tornEdge.frequency / exportScale,
     };
 
-    // 5. Render
     const htCanvas = document.createElement('canvas');
     htCanvas.width = w;
     htCanvas.height = h;
@@ -300,9 +315,8 @@ export const App: React.FC = () => {
 
     renderTornPaperAsset(htCanvas, outCtx, scaledMask, w, h, scaledTornEdge);
 
-    // 6. Trigger download
     const link = document.createElement('a');
-    link.download = `sticker_asset_${currentPresetId}_${exportScale}x.png`;
+    link.download = `asset_${halftone.mode}_${exportScale}x.png`;
     link.href = outCanvas.toDataURL('image/png');
     link.click();
   };
@@ -311,16 +325,15 @@ export const App: React.FC = () => {
     if (!image) return;
     const width = image.naturalWidth || image.width;
     const height = image.naturalHeight || image.height;
-    const maxW = window.innerWidth - 420;
-    const maxH = window.innerHeight - 100;
+    const maxW = window.innerWidth - 380;
+    const maxH = window.innerHeight - 90;
     const fitScale = Math.min(1, Math.min(maxW / width, maxH / height) * 0.88);
-    setScale(Math.max(0.2, fitScale));
+    setScale(Math.max(0.15, fitScale));
     setPan({ x: 0, y: 0 });
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0f1117] text-slate-100 overflow-hidden select-none">
-      {/* Hidden File Input for Image Upload */}
+    <div className="flex flex-col w-screen h-screen bg-[#0d0f15] text-slate-100 overflow-hidden font-sans">
       <input
         ref={fileInputRef}
         type="file"
@@ -333,7 +346,7 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Top Application Header */}
+      {/* Top Navigation Bar */}
       <Header
         currentPresetId={currentPresetId}
         onSelectPreset={handleSelectPreset}
@@ -348,15 +361,16 @@ export const App: React.FC = () => {
         showSplitView={showSplitView}
         onToggleSplitView={() => setShowSplitView(!showSplitView)}
         onResetZoom={handleResetZoom}
-        hasImage={!!image}
+        hasImage={image !== null}
       />
 
-      {/* Workspace Body */}
-      <div className="flex flex-1 relative overflow-hidden">
+      {/* Main Workspace */}
+      <div className="flex flex-1 overflow-hidden relative">
         {/* Left Toolbar */}
         <ToolBar
           activeTool={activeTool}
           onSelectTool={setActiveTool}
+          onAutoCutout={handleSmartAutoCutout}
           brushSize={brushSize}
           onChangeBrushSize={setBrushSize}
           wandTolerance={wandTolerance}
@@ -364,10 +378,10 @@ export const App: React.FC = () => {
           onInvertMask={handleInvertMask}
           onClearMask={handleClearMask}
           onFillAllMask={handleFillAllMask}
-          hasImage={!!image}
+          hasImage={image !== null}
         />
 
-        {/* Center Viewport */}
+        {/* Central Canvas Stage */}
         <CanvasViewport
           image={image}
           mask={mask}
@@ -393,21 +407,23 @@ export const App: React.FC = () => {
         {/* Right Settings Panel */}
         <SettingsPanel
           halftone={halftone}
-          onChangeHalftone={(changes) => setHalftone((prev) => ({ ...prev, ...changes }))}
+          onChangeHalftone={(s) => setHalftone((prev) => ({ ...prev, ...s }))}
           tornEdge={tornEdge}
-          onChangeTornEdge={(changes) => setTornEdge((prev) => ({ ...prev, ...changes }))}
+          onChangeTornEdge={(s) => setTornEdge((prev) => ({ ...prev, ...s }))}
           canvasBg={canvasBg}
           onChangeCanvasBg={setCanvasBg}
-          hasImage={!!image}
+          hasImage={image !== null}
         />
       </div>
 
-      {/* Reference Images Modal */}
-      <SampleImagesModal
-        isOpen={showSamplesModal}
-        onClose={() => setShowSamplesModal(false)}
-        onSelectSample={handleSelectSample}
-      />
+      {/* Sample Reference Images Modal */}
+      {showSamplesModal && (
+        <SampleImagesModal
+          isOpen={showSamplesModal}
+          onSelectSample={handleSelectSample}
+          onClose={() => setShowSamplesModal(false)}
+        />
+      )}
     </div>
   );
 };

@@ -17,6 +17,7 @@ import { ToolType } from '../types';
 interface ToolBarProps {
   activeTool: ToolType;
   onSelectTool: (tool: ToolType) => void;
+  onAutoCutout: () => void;
   brushSize: number;
   onChangeBrushSize: (size: number) => void;
   wandTolerance: number;
@@ -30,6 +31,7 @@ interface ToolBarProps {
 export const ToolBar: React.FC<ToolBarProps> = ({
   activeTool,
   onSelectTool,
+  onAutoCutout,
   brushSize,
   onChangeBrushSize,
   wandTolerance,
@@ -40,14 +42,13 @@ export const ToolBar: React.FC<ToolBarProps> = ({
   hasImage,
 }) => {
   const tools: { id: ToolType; name: string; icon: React.ReactNode; shortcut: string }[] = [
-    { id: 'pan', name: 'Панорамування / Зум (H / Space)', icon: <Hand className="w-4 h-4" />, shortcut: 'H' },
-    { id: 'auto-cutout', name: 'Розумне авто-виділення (A)', icon: <Sparkles className="w-4 h-4 text-amber-400" />, shortcut: 'A' },
-    { id: 'box-select', name: 'Виділення прямокутником (M)', icon: <Square className="w-4 h-4" />, shortcut: 'M' },
-    { id: 'lasso', name: 'Довільне ласо (L)', icon: <Lasso className="w-4 h-4" />, shortcut: 'L' },
-    { id: 'polygon', name: 'Полігональне ласо (P)', icon: <Pentagon className="w-4 h-4" />, shortcut: 'P' },
     { id: 'brush', name: 'Пензель маски (B)', icon: <Paintbrush className="w-4 h-4" />, shortcut: 'B' },
     { id: 'eraser', name: 'Ластик маски (E)', icon: <Eraser className="w-4 h-4" />, shortcut: 'E' },
     { id: 'magic-wand', name: 'Чарівна паличка (W)', icon: <Wand2 className="w-4 h-4" />, shortcut: 'W' },
+    { id: 'box-select', name: 'Виділення прямокутником (M)', icon: <Square className="w-4 h-4" />, shortcut: 'M' },
+    { id: 'lasso', name: 'Довільне ласо (L)', icon: <Lasso className="w-4 h-4" />, shortcut: 'L' },
+    { id: 'polygon', name: 'Полігональне ласо (P)', icon: <Pentagon className="w-4 h-4" />, shortcut: 'P' },
+    { id: 'pan', name: 'Панорамування / Зум (H / Space)', icon: <Hand className="w-4 h-4" />, shortcut: 'H' },
   ];
 
   if (!hasImage) return null;
@@ -56,6 +57,20 @@ export const ToolBar: React.FC<ToolBarProps> = ({
     <aside className="w-14 border-r border-slate-800/80 bg-[#12151e]/90 backdrop-blur-md flex flex-col items-center py-3 justify-between z-20 select-none">
       {/* Primary Selection Tools */}
       <div className="flex flex-col items-center gap-1.5 w-full px-2">
+        {/* On-Demand AI Smart Auto Cutout Button */}
+        <button
+          onClick={onAutoCutout}
+          title="Авто-вирізання фону (ШІ / Edge Detection)"
+          className="w-10 h-10 rounded-xl flex items-center justify-center transition bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 hover:text-amber-300 shadow-sm relative group mb-1"
+        >
+          <Sparkles className="w-4 h-4" />
+          <div className="absolute left-full ml-2.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-amber-300 text-xs rounded-md whitespace-nowrap shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
+            Розумне авто-вирізання
+          </div>
+        </button>
+
+        <div className="w-6 h-px bg-slate-800 my-0.5" />
+
         {tools.map((tool) => {
           const isActive = activeTool === tool.id;
           return (
@@ -104,7 +119,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
               max="80"
               value={wandTolerance}
               onChange={(e) => onChangeWandTolerance(Number(e.target.value))}
-              title="Чутливість"
+              title="Чутливість виділення"
               className="w-8 accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded"
             />
           </div>

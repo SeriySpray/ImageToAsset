@@ -1,5 +1,3 @@
-import { Point } from '../types';
-
 /**
  * Creates a blank alpha mask initialized to 0
  */
@@ -8,7 +6,7 @@ export function createEmptyMask(width: number, height: number): Uint8ClampedArra
 }
 
 /**
- * Creates a fully selected mask initialized to 255
+ * Creates a fully selected mask initialized to 255 (100% visible)
  */
 export function createFullMask(width: number, height: number): Uint8ClampedArray {
   const mask = new Uint8ClampedArray(width * height);
@@ -17,160 +15,7 @@ export function createFullMask(width: number, height: number): Uint8ClampedArray
 }
 
 /**
- * Updates mask with a circular brush or eraser stamp
- */
-export function applyBrush(
-  mask: Uint8ClampedArray,
-  width: number,
-  height: number,
-  x: number,
-  y: number,
-  radius: number,
-  isEraser: boolean,
-  feather = 0.2
-): void {
-  const rCeil = Math.ceil(radius);
-  const minX = Math.max(0, Math.floor(x - rCeil));
-  const maxX = Math.min(width - 1, Math.ceil(x + rCeil));
-  const minY = Math.max(0, Math.floor(y - rCeil));
-  const maxY = Math.min(height - 1, Math.ceil(y + rCeil));
-
-  const r2 = radius * radius;
-  const innerRadius = radius * (1 - feather);
-  const innerR2 = innerRadius * innerRadius;
-
-  for (let py = minY; py <= maxY; py++) {
-    const dy = py - y;
-    const dy2 = dy * dy;
-    const rowOffset = py * width;
-
-    for (let px = minX; px <= maxX; px++) {
-      const dx = px - x;
-      const d2 = dx * dx + dy2;
-
-      if (d2 <= r2) {
-        let opacity = 1.0;
-        if (d2 > innerR2 && feather > 0) {
-          const d = Math.sqrt(d2);
-          opacity = 1 - (d - innerRadius) / (radius - innerRadius);
-        }
-
-        const idx = rowOffset + px;
-        const currentVal = mask[idx];
-
-        if (isEraser) {
-          mask[idx] = Math.max(0, Math.min(255, Math.round(currentVal * (1 - opacity))));
-        } else {
-          mask[idx] = Math.max(0, Math.min(255, Math.round(currentVal + (255 - currentVal) * opacity)));
-        }
-      }
-    }
-  }
-}
-
-/**
- * Interpolates and applies brush along a continuous stroke
- */
-export function applyBrushStroke(
-  mask: Uint8ClampedArray,
-  width: number,
-  height: number,
-  from: Point,
-  to: Point,
-  radius: number,
-  isEraser: boolean,
-  feather = 0.2
-): void {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dist = Math.hypot(dx, dy);
-  const step = Math.max(1, radius * 0.25);
-  const count = Math.ceil(dist / step);
-
-  for (let i = 0; i <= count; i++) {
-    const t = count === 0 ? 1 : i / count;
-    const x = from.x + dx * t;
-    const y = from.y + dy * t;
-    applyBrush(mask, width, height, x, y, radius, isEraser, feather);
-  }
-}
-
-/**
- * Fills an arbitrary closed polygon in the mask using scanline rasterization
- */
-export function fillPolygonMask(
-  mask: Uint8ClampedArray,
-  width: number,
-  height: number,
-  points: Point[],
-  value = 255
-): void {
-  if (points.length < 3) return;
-
-  let minY = height;
-  let maxY = 0;
-  for (const p of points) {
-    minY = Math.min(minY, Math.floor(p.y));
-    maxY = Math.max(maxY, Math.ceil(p.y));
-  }
-  minY = Math.max(0, minY);
-  maxY = Math.min(height - 1, maxY);
-
-  for (let y = minY; y <= maxY; y++) {
-    const nodeX: number[] = [];
-    let j = points.length - 1;
-
-    for (let i = 0; i < points.length; i++) {
-      const pi = points[i];
-      const pj = points[j];
-
-      if ((pi.y < y && pj.y >= y) || (pj.y < y && pi.y >= y)) {
-        const x = pi.x + ((y - pi.y) / (pj.y - pi.y)) * (pj.x - pi.x);
-        nodeX.push(x);
-      }
-      j = i;
-    }
-
-    nodeX.sort((a, b) => a - b);
-
-    for (let i = 0; i < nodeX.length; i += 2) {
-      if (i + 1 >= nodeX.length) break;
-      const startX = Math.max(0, Math.floor(nodeX[i]));
-      const endX = Math.min(width - 1, Math.ceil(nodeX[i + 1]));
-      const rowOffset = y * width;
-
-      for (let x = startX; x <= endX; x++) {
-        mask[rowOffset + x] = value;
-      }
-    }
-  }
-}
-
-/**
- * Sets rectangular region in mask
- */
-export function setBoxMask(
-  mask: Uint8ClampedArray,
-  width: number,
-  height: number,
-  box: { x0: number; y0: number; x1: number; y1: number },
-  value = 255
-): void {
-  const minX = Math.max(0, Math.min(width - 1, Math.floor(Math.min(box.x0, box.x1))));
-  const maxX = Math.max(0, Math.min(width - 1, Math.ceil(Math.max(box.x0, box.x1))));
-  const minY = Math.max(0, Math.min(height - 1, Math.floor(Math.min(box.y0, box.y1))));
-  const maxY = Math.max(0, Math.min(height - 1, Math.ceil(Math.max(box.y0, box.y1))));
-
-  for (let y = minY; y <= maxY; y++) {
-    const rowOffset = y * width;
-    for (let x = minX; x <= maxX; x++) {
-      mask[rowOffset + x] = value;
-    }
-  }
-}
-
-/**
- * Magic Wand selection based on color distance and flood fill
+ * Advanced Magic Wand selection tool with color tolerance, 8-way flood fill, and edge antialiasing
  */
 export function magicWandSelect(
   srcCtx: CanvasRenderingContext2D,
@@ -181,7 +26,7 @@ export function magicWandSelect(
   seedY: number,
   tolerance: number, // 0..100
   contiguous = true,
-  mode: 'replace' | 'add' | 'subtract' = 'replace'
+  mode: 'replace' | 'add' | 'subtract' = 'add'
 ): void {
   const imgData = srcCtx.getImageData(0, 0, width, height);
   const pixels = imgData.data;
@@ -195,7 +40,9 @@ export function magicWandSelect(
   const sb = pixels[seedIdx + 2];
   const sa = pixels[seedIdx + 3];
 
-  const maxDistSq = (tolerance * 4.41) ** 2; // (100 -> ~441 max Euclidean distance)
+  // Map tolerance (0..100) -> Euclidean distance squared in RGB space
+  const tolDist = (tolerance / 100) * 255;
+  const maxDistSq = tolDist * tolDist * 3;
 
   const isSimilar = (x: number, y: number): boolean => {
     const idx = (y * width + x) * 4;
@@ -204,19 +51,23 @@ export function magicWandSelect(
     const b = pixels[idx + 2];
     const a = pixels[idx + 3];
 
-    if (sa < 10 && a < 10) return true;
-    if (Math.abs(sa - a) > 50) return false;
+    // Transparent pixel matching
+    if (sa < 15 && a < 15) return true;
+    if (Math.abs(sa - a) > 60) return false;
 
-    const dr = r - sr;
-    const dg = g - sg;
-    const db = b - sb;
-    return dr * dr + dg * dg + db * db <= maxDistSq;
+    // Perceptually weighted color distance
+    const rMean = (sr + r) / 2;
+    const dr = sr - r;
+    const dg = sg - g;
+    const db = sb - b;
+    const distSq = (2 + rMean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rMean) / 256) * db * db;
+    return distSq <= maxDistSq;
   };
 
   const selected = new Uint8Array(width * height);
 
   if (contiguous) {
-    // 4-way BFS Flood Fill
+    // 8-way BFS Flood Fill
     const queue: number[] = [sx, sy];
     const visited = new Uint8Array(width * height);
     visited[sy * width + sx] = 1;
@@ -231,7 +82,11 @@ export function magicWandSelect(
         [qx + 1, qy],
         [qx - 1, qy],
         [qx, qy + 1],
-        [qx, qy - 1]
+        [qx, qy - 1],
+        [qx + 1, qy + 1],
+        [qx - 1, qy - 1],
+        [qx + 1, qy - 1],
+        [qx - 1, qy + 1],
       ];
 
       for (const [nx, ny] of neighbors) {
@@ -257,7 +112,7 @@ export function magicWandSelect(
     }
   }
 
-  // Apply to output mask based on mode
+  // Smooth mask transitions & apply mode
   for (let i = 0; i < width * height; i++) {
     if (mode === 'replace') {
       mask[i] = selected[i] ? 255 : 0;
@@ -271,7 +126,7 @@ export function magicWandSelect(
 
 /**
  * Intelligent Smart Foreground Cutout:
- * Analyzes contrast, edge energy and background border sampling to isolate main subject automatically
+ * Isolates foreground object from background on demand
  */
 export function smartAutoCutout(
   srcCtx: CanvasRenderingContext2D,
@@ -288,7 +143,7 @@ export function smartAutoCutout(
   const minY = boundBox ? Math.max(0, Math.floor(Math.min(boundBox.y0, boundBox.y1))) : 0;
   const maxY = boundBox ? Math.min(height - 1, Math.ceil(Math.max(boundBox.y0, boundBox.y1))) : height - 1;
 
-  // Check if image already has native alpha channel transparency
+  // Check if image already has native alpha channel
   let hasAlpha = false;
   for (let i = 3; i < pixels.length; i += 16) {
     if (pixels[i] < 200) {
@@ -335,7 +190,7 @@ export function smartAutoCutout(
       const dr = r - bg.r;
       const dg = g - bg.g;
       const db = b - bg.b;
-      if (dr * dr + dg * dg + db * db < 1800) { // tolerance ~42
+      if (dr * dr + dg * dg + db * db < 1800) {
         return true;
       }
     }

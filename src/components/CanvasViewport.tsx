@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ToolType, Point, HalftoneSettings, TornEdgeSettings } from '../types';
 import { renderHalftone } from '../engine/halftone';
 import { renderTornPaperAsset } from '../engine/torn-edge';
-import { magicWandSelect, smartAutoCutout } from '../engine/segmentation';
+import { magicWandSelect, smartAutoCutout, createFullMask } from '../engine/segmentation';
 
 interface CanvasViewportProps {
   image: HTMLImageElement | null;
@@ -48,7 +48,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Interaction states
   const [isInteracting, setIsInteracting] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const lastPointRef = useRef<Point | null>(null);
@@ -59,6 +58,11 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const [freehandPoints, setFreehandPoints] = useState<Point[]>([]);
   const [mousePos, setMousePos] = useState<Point | null>(null);
   const [splitPosition, setSplitPosition] = useState<number>(0.5);
+
+  const scaleRef = useRef(scale);
+  const panRef = useRef(pan);
+  useEffect(() => { scaleRef.current = scale; }, [scale]);
+  useEffect(() => { panRef.current = pan; }, [pan]);
 
   // Space key for panning
   useEffect(() => {
@@ -92,12 +96,19 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const pixels = imgData.data;
     const newMask = new Uint8ClampedArray(width * height);
 
+    let hasChange = false;
     for (let i = 0; i < width * height; i++) {
-      newMask[i] = pixels[i * 4 + 3];
+      const alpha = pixels[i * 4 + 3];
+      newMask[i] = alpha;
+      if (!mask || mask[i] !== alpha) {
+        hasChange = true;
+      }
     }
 
-    onUpdateMask(newMask);
-  }, [image, onUpdateMask]);
+    if (hasChange) {
+      onUpdateMask(newMask);
+    }
+  }, [image, mask, onUpdateMask]);
 
   // Global Mouse Up Listener to ensure strokes commit even when releasing outside canvas
   useEffect(() => {
@@ -112,6 +123,42 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [isInteracting, commitMaskCanvas]);
+
+  // Native Non-Passive Wheel Zoom (prevents browser page zoom and zooms strictly around cursor)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+      const currentScale = scaleRef.current;
+      const newScale = Math.max(0.05, Math.min(25, currentScale * zoomFactor));
+
+      const currentPan = panRef.current;
+      const viewCenterX = rect.width / 2 + currentPan.x;
+      const viewCenterY = rect.height / 2 + currentPan.y;
+
+      const dx = mouseX - viewCenterX;
+      const dy = mouseY - viewCenterY;
+
+      const newPanX = currentPan.x - dx * (newScale / currentScale - 1);
+      const newPanY = currentPan.y - dy * (newScale / currentScale - 1);
+
+      onUpdateView(newScale, { x: newPanX, y: newPanY });
+    };
+
+    container.addEventListener('wheel', handleWheelNative, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheelNative);
+    };
+  }, [onUpdateView]);
 
   // Sync Source Image to Source Canvas
   useEffect(() => {
@@ -155,7 +202,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     maskCtx.putImageData(imgData, 0, 0);
   }, [image, mask]);
 
-  // 1. Pre-render Halftone Texture (ONLY runs when image or halftone parameters change!)
+  // 1. Pre-render Halftone Texture
   useEffect(() => {
     if (!image || !sourceCanvasRef.current) return;
     const width = image.naturalWidth || image.width;
@@ -249,54 +296,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     [image, scale, pan]
   );
 
-  const scaleRef = useRef(scale);
-  const panRef = useRef(pan);
-  useEffect(() => { scaleRef.current = scale; }, [scale]);
-  useEffect(() => { panRef.current = pan; }, [pan]);
-
-  // Native Non-Passive Wheel Zoom (prevents browser page zoom and zooms strictly around cursor)
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const handleWheelNative = (e: WheelEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const rect = container.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      // Smooth zoom multiplier
-      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-      const currentScale = scaleRef.current;
-      const newScale = Math.max(0.05, Math.min(25, currentScale * zoomFactor));
-
-      // Zoom centered at mouse position
-      const currentPan = panRef.current;
-      const viewCenterX = rect.width / 2 + currentPan.x;
-      const viewCenterY = rect.height / 2 + currentPan.y;
-
-      const dx = mouseX - viewCenterX;
-      const dy = mouseY - viewCenterY;
-
-      const newPanX = currentPan.x - dx * (newScale / currentScale - 1);
-      const newPanY = currentPan.y - dy * (newScale / currentScale - 1);
-
-      onUpdateView(newScale, { x: newPanX, y: newPanY });
-    };
-
-    container.addEventListener('wheel', handleWheelNative, { passive: false });
-    return () => {
-      container.removeEventListener('wheel', handleWheelNative);
-    };
-  }, [onUpdateView]);
-
   // Mouse Down
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!image || !maskCanvasRef.current) return;
 
-    // Pan with Middle Click, Space Key, or Pan Tool
     if (e.button === 1 || isSpacePressed || activeTool === 'pan') {
       setIsInteracting(true);
       dragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
@@ -341,7 +344,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         const first = polygonPoints[0];
         const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
         if (dist < 12 / scale) {
-          // Close polygon
           maskCtx.globalCompositeOperation = e.altKey ? 'destination-out' : 'source-over';
           maskCtx.fillStyle = '#ffffff';
           maskCtx.beginPath();
@@ -362,45 +364,22 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     } else if (activeTool === 'magic-wand' && sourceCanvasRef.current) {
       const width = image.naturalWidth || image.width;
       const height = image.naturalHeight || image.height;
-      const tempMask = new Uint8ClampedArray(width * height);
+      const targetMask = mask ? new Uint8ClampedArray(mask) : createFullMask(width, height);
+      const mode = e.altKey ? 'subtract' : (e.shiftKey ? 'add' : 'replace');
 
       magicWandSelect(
-        sourceCanvasRef.current.getContext('2d')!,
-        tempMask,
+        sourceCanvasRef.current.getContext('2d', { willReadFrequently: true })!,
+        targetMask,
         width,
         height,
         pt.x,
         pt.y,
         wandTolerance,
         true,
-        'replace'
+        mode
       );
 
-      const wandCanvas = document.createElement('canvas');
-      wandCanvas.width = width;
-      wandCanvas.height = height;
-      const wandCtx = wandCanvas.getContext('2d');
-      if (wandCtx) {
-        const imgD = wandCtx.createImageData(width, height);
-        for (let i = 0; i < width * height; i++) {
-          if (tempMask[i] > 0) {
-            imgD.data[i * 4] = 255;
-            imgD.data[i * 4 + 1] = 255;
-            imgD.data[i * 4 + 2] = 255;
-            imgD.data[i * 4 + 3] = 255;
-          }
-        }
-        wandCtx.putImageData(imgD, 0, 0);
-
-        if (e.altKey) {
-          maskCtx.globalCompositeOperation = 'destination-out';
-        } else {
-          maskCtx.globalCompositeOperation = 'source-over';
-        }
-        maskCtx.drawImage(wandCanvas, 0, 0);
-      }
-
-      commitMaskCanvas();
+      onUpdateMask(targetMask);
       setIsInteracting(false);
     }
   };
@@ -412,7 +391,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
     if (!isInteracting) return;
 
-    // Pan viewport
     if (dragStartRef.current && (isSpacePressed || activeTool === 'pan' || e.buttons === 4)) {
       onUpdateView(scale, {
         x: e.clientX - dragStartRef.current.x,
@@ -531,7 +509,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
   };
 
-  // Render Vector Selection Overlay (Box selection, Lasso paths, Polygon nodes)
+  // Render Vector Selection Overlay
   useEffect(() => {
     if (!image || !overlayCanvasRef.current) return;
     const width = image.naturalWidth || image.width;
@@ -544,7 +522,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
     ctx.clearRect(0, 0, width, height);
 
-    // Draw active box select
     if (boxSelection && (activeTool === 'box-select' || activeTool === 'auto-cutout')) {
       const minX = Math.min(boxSelection.x0, boxSelection.x1);
       const minY = Math.min(boxSelection.y0, boxSelection.y1);
@@ -561,7 +538,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       ctx.restore();
     }
 
-    // Draw polygon nodes and path
     if (polygonPoints.length > 0) {
       ctx.save();
       ctx.strokeStyle = '#38bdf8';
@@ -588,7 +564,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       ctx.restore();
     }
 
-    // Draw freehand lasso path
     if (freehandPoints.length > 1) {
       ctx.save();
       ctx.strokeStyle = '#38bdf8';
@@ -733,7 +708,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
                   : 'border-emerald-400 bg-emerald-500/20 ring-1 ring-emerald-500/40'
               }`}
             >
-              {/* Crosshair indicator */}
               <div className={`w-1.5 h-1.5 rounded-full ${activeTool === 'eraser' ? 'bg-rose-400' : 'bg-emerald-400'}`} />
             </div>
           )}

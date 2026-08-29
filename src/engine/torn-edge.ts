@@ -162,6 +162,40 @@ export function computeDistanceTransform(
 
 const noiseGenerator = new FastNoise(4242);
 
+// Precomputed 256x256 high-fidelity paper texture map (fibers + tooth grain + pulp flecks)
+const PAPER_TEXTURE_SIZE = 256;
+const paperTextureMap = new Int8Array(PAPER_TEXTURE_SIZE * PAPER_TEXTURE_SIZE);
+
+(() => {
+  // Deterministic PRNG for consistent, beautiful paper grain
+  let seed = 1337;
+  const rnd = () => {
+    seed = (seed * 1664525 + 1013904223) | 0;
+    return ((seed >>> 0) / 4294967296);
+  };
+
+  for (let y = 0; y < PAPER_TEXTURE_SIZE; y++) {
+    for (let x = 0; x < PAPER_TEXTURE_SIZE; x++) {
+      // 1. High frequency micro-grain (paper tooth)
+      const microTooth = (rnd() - 0.5) * 12;
+
+      // 2. Multi-directional organic paper fibers & pulp variation
+      const organicPulp = Math.sin(x * 0.15) * Math.cos(y * 0.15) * 5;
+      const diagonalFibers = Math.sin((x * 1.4 + y * 0.8) * 0.3) * 3.5;
+      const horizontalGrain = Math.sin(y * 0.6 + rnd() * 0.5) * 2.5;
+
+      // 3. Subtle natural pulp flecks and inclusions
+      let pulpFleck = 0;
+      if (rnd() < 0.007) {
+        pulpFleck = (rnd() > 0.4 ? -1 : 1) * (9 + rnd() * 10);
+      }
+
+      const totalGrain = Math.round(microTooth + organicPulp + diagonalFibers + horizontalGrain + pulpFleck);
+      paperTextureMap[y * PAPER_TEXTURE_SIZE + x] = Math.max(-24, Math.min(24, totalGrain));
+    }
+  }
+})();
+
 /**
  * Ultra-fast paper sticker backing renderer using 32-bit integer pixel writes, fast noise LUT, and multi-stage culling
  */
@@ -183,30 +217,22 @@ export function renderPaperBacking(
   const paperImgData = paperCtx.createImageData(width, height);
   const pixels32 = new Uint32Array(paperImgData.data.buffer);
 
-  // Parse paper background color into 32-bit ABGR/RGBA integer
+  // Parse paper background color into RGB
   const hex = settings.paperColor.replace('#', '');
   const pr = parseInt(hex.substring(0, 2), 16) || 255;
   const pg = parseInt(hex.substring(2, 4), 16) || 255;
   const pb = parseInt(hex.substring(4, 6), 16) || 255;
 
-  // Precompute solid 32-bit color: 0xAABBGGRR (Little Endian Canvas Uint32)
-  const solidColor32 = (255 << 24) | (pb << 16) | (pg << 8) | pr;
-
   const { padding, roughness, paperTexture } = settings;
   const maxPossiblePadding = padding + roughness * 1.25;
   const innerCorePadding = Math.max(0, padding - roughness * 1.25);
-
-  // Fast bitwise grain precomputation
-  const grainLUT = new Int8Array(16);
-  for (let i = 0; i < 16; i++) {
-    grainLUT[i] = (i % 7) - 3;
-  }
 
   // Render paper backing with instant O(1) noise lookup on boundary pixels
   for (let y = 0; y < height; y++) {
     const rowOffset = y * width;
     const gridY = isSubsampled ? y >> 1 : y;
     const gridRowOffset = gridY * gridW;
+    const textureYOffset = (y & 255) * PAPER_TEXTURE_SIZE;
 
     for (let x = 0; x < width; x++) {
       const idx = rowOffset + x;
@@ -220,16 +246,16 @@ export function renderPaperBacking(
         continue;
       }
 
-      // Fast path 2: Solid core of sticker (skip noise)
+      // Fast path 2: Solid core of sticker (skip edge boundary math)
       if (dist <= innerCorePadding) {
         if (paperTexture) {
-          const grain = grainLUT[(x * 3 + y * 7) & 15];
+          const grain = paperTextureMap[textureYOffset + (x & 255)];
           const gr = Math.max(0, Math.min(255, pr + grain));
-          const gg = Math.max(0, Math.min(255, pg + grain));
-          const gb = Math.max(0, Math.min(255, pb + grain));
+          const gg = Math.max(0, Math.min(255, pg + Math.round(grain * 0.95)));
+          const gb = Math.max(0, Math.min(255, pb + Math.round(grain * 0.85)));
           pixels32[idx] = (255 << 24) | (gb << 16) | (gg << 8) | gr;
         } else {
-          pixels32[idx] = solidColor32;
+          pixels32[idx] = (255 << 24) | (pb << 16) | (pg << 8) | pr;
         }
         continue;
       }
@@ -245,10 +271,10 @@ export function renderPaperBacking(
         let gb = pb;
 
         if (paperTexture) {
-          const grain = grainLUT[(x * 3 + y * 7) & 15];
+          const grain = paperTextureMap[textureYOffset + (x & 255)];
           gr = Math.max(0, Math.min(255, pr + grain));
-          gg = Math.max(0, Math.min(255, pg + grain));
-          gb = Math.max(0, Math.min(255, pb + grain));
+          gg = Math.max(0, Math.min(255, pg + Math.round(grain * 0.95)));
+          gb = Math.max(0, Math.min(255, pb + Math.round(grain * 0.85)));
         }
 
         const edgeDist = effectivePadding - dist;

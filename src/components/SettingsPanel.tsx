@@ -42,10 +42,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   ];
 
   const paperColors = [
-    { name: 'Pure White', value: '#ffffff' },
-    { name: 'Off-White', value: '#f4f4f4' },
-    { name: 'Light Gray', value: '#d4d4d4' },
-    { name: 'Dark Ink', value: '#121212' },
+    { name: 'Чистий білий', value: '#ffffff' },
+    { name: 'Вінтажний кремовий (Жовтуватий)', value: '#f6f0db' },
+    { name: 'Світло-бежевий пергамент', value: '#eee6d3' },
+    { name: 'Нейтральний сірий', value: '#d8d8d8' },
+    { name: 'Темний графіт', value: '#1a1a1a' },
   ];
 
   const showDotSize = halftone.mode !== 'grayscale-contrast';
@@ -206,7 +207,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <label className="text-[10px] font-medium text-neutral-400 mb-1.5 block uppercase tracking-wider">
                 Колір підкладки
               </label>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-5 gap-1.5">
                 {paperColors.map((c) => (
                   <button
                     key={c.value}

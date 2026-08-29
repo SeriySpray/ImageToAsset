@@ -17,9 +17,10 @@ export function createFullMask(width: number, height: number): Uint8ClampedArray
 }
 
 /**
- * Advanced Magic Wand / Smart Lasso Object Cutout Engine:
- * Analyzes the encircled region (lasso loop) with Sobel boundary detection,
- * edge-constrained flood fill, and topological hole filling to extract the full object.
+ * Advanced Magic Wand / Smart Lasso Object Cutout Engine (First-Hit Edge Barrier Wavefront):
+ * Starts at the lasso boundary and advances inward through background until it hits the FIRST
+ * color/edge transition of the subject, stopping strictly at the outer contour and preserving
+ * all internal details (white shirts, skin, clothes, inner textures) 100% intact.
  */
 export function smartLassoCutout(
   srcCtx: CanvasRenderingContext2D,
@@ -102,7 +103,7 @@ export function smartLassoCutout(
     return lassoAlpha[(y * totalWidth + x) * 4 + 3] > 128;
   };
 
-  // 3. Precompute luminance and Sobel edge gradients with dilation
+  // 3. Precompute High-Sensitivity Sobel Edge & Color Gradients
   const lum = new Uint8Array(totalWidth * totalHeight);
   for (let y = minY; y <= maxY; y++) {
     const rowOffset = y * totalWidth;
@@ -112,126 +113,58 @@ export function smartLassoCutout(
     }
   }
 
-  const rawGrad = new Uint8Array(totalWidth * totalHeight);
-  for (let y = minY + 1; y < maxY; y++) {
-    const rowOffset = y * totalWidth;
-    for (let x = minX + 1; x < maxX; x++) {
-      const gx = Math.abs(lum[rowOffset + x + 1] - lum[rowOffset + x - 1]);
-      const gy = Math.abs(lum[(y + 1) * totalWidth + x] - lum[(y - 1) * totalWidth + x]);
-      rawGrad[rowOffset + x] = Math.min(255, gx + gy);
-    }
-  }
-
-  // 1px edge barrier closure (dilation) to prevent edge leaks
   const edgeBarrier = new Uint8Array(totalWidth * totalHeight);
   for (let y = minY + 1; y < maxY; y++) {
     const rowOffset = y * totalWidth;
     for (let x = minX + 1; x < maxX; x++) {
-      const g = rawGrad[rowOffset + x];
-      if (g > 26) {
-        edgeBarrier[rowOffset + x] = 1;
-        edgeBarrier[rowOffset + x + 1] = 1;
-        edgeBarrier[rowOffset + x - 1] = 1;
-        edgeBarrier[(y + 1) * totalWidth + x] = 1;
-        edgeBarrier[(y - 1) * totalWidth + x] = 1;
+      const idx = rowOffset + x;
+
+      // Luminance gradient
+      const gx = Math.abs(lum[idx + 1] - lum[idx - 1]);
+      const gy = Math.abs(lum[(y + 1) * totalWidth + x] - lum[(y - 1) * totalWidth + x]);
+      const gradLum = gx + gy;
+
+      // Color channel gradients
+      const pLeft = (idx - 1) * 4;
+      const pRight = (idx + 1) * 4;
+      const pUp = ((y - 1) * totalWidth + x) * 4;
+      const pDown = ((y + 1) * totalWidth + x) * 4;
+
+      const dr = Math.abs(pixels[pRight] - pixels[pLeft]) + Math.abs(pixels[pDown] - pixels[pUp]);
+      const dg = Math.abs(pixels[pRight + 1] - pixels[pLeft + 1]) + Math.abs(pixels[pDown + 1] - pixels[pUp + 1]);
+      const db = Math.abs(pixels[pRight + 2] - pixels[pLeft + 2]) + Math.abs(pixels[pDown + 2] - pixels[pUp + 2]);
+      const gradColor = Math.max(dr, dg, db);
+
+      const maxEdge = Math.max(gradLum, gradColor);
+      if (maxEdge > 18) {
+        edgeBarrier[idx] = 1;
       }
     }
   }
 
-  // 4. Sample background colors along the perimeter of the lasso loop
-  const bgClusters: { r: number; g: number; b: number; count: number }[] = [];
-
-  const addBgSample = (x: number, y: number) => {
-    const idx = (y * totalWidth + x) * 4;
-    const a = pixels[idx + 3];
-    if (a < 15) return;
-
-    const r = pixels[idx];
-    const g = pixels[idx + 1];
-    const b = pixels[idx + 2];
-
-    let bestDist = Infinity;
-    let bestCluster: { r: number; g: number; b: number; count: number } | null = null;
-
-    for (const c of bgClusters) {
-      const dr = r - c.r;
-      const dg = g - c.g;
-      const db = b - c.b;
-      const d = dr * dr + dg * dg + db * db;
-      if (d < bestDist) {
-        bestDist = d;
-        bestCluster = c;
-      }
-    }
-
-    if (bestCluster && bestDist < 1200) {
-      bestCluster.r = Math.round((bestCluster.r * bestCluster.count + r) / (bestCluster.count + 1));
-      bestCluster.g = Math.round((bestCluster.g * bestCluster.count + g) / (bestCluster.count + 1));
-      bestCluster.b = Math.round((bestCluster.b * bestCluster.count + b) / (bestCluster.count + 1));
-      bestCluster.count++;
-    } else if (bgClusters.length < 24) {
-      bgClusters.push({ r, g, b, count: 1 });
-    }
-  };
-
-  for (let y = minY; y <= maxY; y += 2) {
-    for (let x = minX; x <= maxX; x += 2) {
-      if (isInsideLasso(x, y)) {
-        if (
-          !isInsideLasso(x - 2, y) ||
-          !isInsideLasso(x + 2, y) ||
-          !isInsideLasso(x, y - 2) ||
-          !isInsideLasso(x, y + 2)
-        ) {
-          addBgSample(x, y);
-        }
-      }
-    }
-  }
-
-  const isBackgroundLike = (x: number, y: number, toleranceSq = 3200): boolean => {
-    const idx = (y * totalWidth + x) * 4;
-    const a = pixels[idx + 3];
-    if (a < 15) return true;
-
-    const r = pixels[idx];
-    const g = pixels[idx + 1];
-    const b = pixels[idx + 2];
-
-    for (const c of bgClusters) {
-      const dr = r - c.r;
-      const dg = g - c.g;
-      const db = b - c.b;
-      if (dr * dr + dg * dg + db * db <= toleranceSq) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  // 5. Inward Connected Flood Fill from Lasso Perimeter
-  const isBg = new Uint8Array(totalWidth * totalHeight);
+  // 4. Inward Wavefront from Lasso Perimeter (First-Hit Stop)
+  // Seeds store: x, y, seedR, seedG, seedB
+  const visited = new Uint8Array(totalWidth * totalHeight);
+  const isBackground = new Uint8Array(totalWidth * totalHeight);
   const queue: number[] = [];
 
-  const pushBgSeed = (x: number, y: number) => {
-    const idx = y * totalWidth + x;
-    if (!isBg[idx]) {
-      isBg[idx] = 1;
-      queue.push(x, y);
-    }
-  };
-
-  // Start at perimeter
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       if (isInsideLasso(x, y)) {
-        if (
+        // Border of lasso loop
+        const isBorder = (
           !isInsideLasso(x - 1, y) ||
           !isInsideLasso(x + 1, y) ||
           !isInsideLasso(x, y - 1) ||
           !isInsideLasso(x, y + 1)
-        ) {
-          pushBgSeed(x, y);
+        );
+
+        if (isBorder) {
+          const idx = y * totalWidth + x;
+          const pidx = idx * 4;
+          visited[idx] = 1;
+          isBackground[idx] = 1;
+          queue.push(x, y, pixels[pidx], pixels[pidx + 1], pixels[pidx + 2]);
         }
       }
     }
@@ -241,6 +174,14 @@ export function smartLassoCutout(
   while (head < queue.length) {
     const qx = queue[head++];
     const qy = queue[head++];
+    const sr = queue[head++];
+    const sg = queue[head++];
+    const sb = queue[head++];
+
+    const qidx = (qy * totalWidth + qx) * 4;
+    const qr = pixels[qidx];
+    const qg = pixels[qidx + 1];
+    const qb = pixels[qidx + 2];
 
     const neighbors = [
       [qx + 1, qy],
@@ -252,78 +193,56 @@ export function smartLassoCutout(
     for (const [nx, ny] of neighbors) {
       if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY && isInsideLasso(nx, ny)) {
         const nidx = ny * totalWidth + nx;
-        if (!isBg[nidx]) {
-          // Stop flood-fill at edge barrier or if color diverges strongly from bg samples
-          if (!edgeBarrier[nidx] && (bgClusters.length === 0 || isBackgroundLike(nx, ny))) {
-            isBg[nidx] = 1;
-            queue.push(nx, ny);
+        if (!visited[nidx]) {
+          const npidx = nidx * 4;
+          const na = pixels[npidx + 3];
+
+          // Transparent buffer is always background
+          if (na < 15) {
+            visited[nidx] = 1;
+            isBackground[nidx] = 1;
+            queue.push(nx, ny, sr, sg, sb);
+            continue;
+          }
+
+          const nr = pixels[npidx];
+          const ng = pixels[npidx + 1];
+          const nb = pixels[npidx + 2];
+
+          // Step difference from previous pixel
+          const stepDiff = Math.abs(nr - qr) + Math.abs(ng - qg) + Math.abs(nb - qb);
+          // Drift from starting border seed
+          const seedDiff = Math.abs(nr - sr) + Math.abs(ng - sg) + Math.abs(nb - sb);
+
+          // FIRST-HIT STOP RULE:
+          // If we hit an edge barrier or color jump, STOP IMMEDIATELY!
+          // Do NOT mark as background, do NOT continue into subject!
+          if (edgeBarrier[nidx] || stepDiff > 22 || seedDiff > 42) {
+            visited[nidx] = 1; // mark as boundary visited so we don't re-test
+            // Notice: isBackground[nidx] remains 0! It belongs to the SUBJECT!
+          } else {
+            // Still in smooth background area
+            visited[nidx] = 1;
+            isBackground[nidx] = 1;
+            queue.push(nx, ny, sr, sg, sb);
           }
         }
       }
     }
   }
 
-  // 6. Subject is all unflooded pixels inside lasso
+  // 5. Subject is all pixels inside lasso that are NOT background
   const isSubject = new Uint8Array(totalWidth * totalHeight);
   for (let y = minY; y <= maxY; y++) {
     const rowOffset = y * totalWidth;
     for (let x = minX; x <= maxX; x++) {
-      if (isInsideLasso(x, y) && !isBg[rowOffset + x]) {
+      if (isInsideLasso(x, y) && !isBackground[rowOffset + x]) {
         isSubject[rowOffset + x] = 1;
       }
     }
   }
 
-  // 7. Topological Hole Filling: Fill internal holes enclosed within the subject
-  const invertedBg = new Uint8Array(totalWidth * totalHeight);
-  const holeQueue: number[] = [];
-
-  // Seed hole search from corners outside lasso
-  for (let x = 0; x < totalWidth; x++) {
-    invertedBg[x] = 1;
-    invertedBg[(totalHeight - 1) * totalWidth + x] = 1;
-    holeQueue.push(x, 0, x, totalHeight - 1);
-  }
-  for (let y = 0; y < totalHeight; y++) {
-    invertedBg[y * totalWidth] = 1;
-    invertedBg[y * totalWidth + totalWidth - 1] = 1;
-    holeQueue.push(0, y, totalWidth - 1, y);
-  }
-
-  let holeHead = 0;
-  while (holeHead < holeQueue.length) {
-    const hx = holeQueue[holeHead++];
-    const hy = holeQueue[holeHead++];
-
-    const nbs = [
-      [hx + 1, hy],
-      [hx - 1, hy],
-      [hx, hy + 1],
-      [hx, hy - 1]
-    ];
-
-    for (const [nx, ny] of nbs) {
-      if (nx >= 0 && nx < totalWidth && ny >= 0 && ny < totalHeight) {
-        const nidx = ny * totalWidth + nx;
-        if (!invertedBg[nidx] && !isSubject[nidx]) {
-          invertedBg[nidx] = 1;
-          holeQueue.push(nx, ny);
-        }
-      }
-    }
-  }
-
-  // Internal holes (pixels not reachable from outside) become part of subject
-  for (let y = minY; y <= maxY; y++) {
-    const rowOffset = y * totalWidth;
-    for (let x = minX; x <= maxX; x++) {
-      if (isInsideLasso(x, y) && !invertedBg[rowOffset + x]) {
-        isSubject[rowOffset + x] = 1;
-      }
-    }
-  }
-
-  // 8. Apply to Output Mask
+  // 6. Apply to Output Mask according to Mode
   if (mode === 'replace') {
     outputMask.fill(0);
     for (let y = minY; y <= maxY; y++) {

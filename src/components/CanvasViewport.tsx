@@ -5,7 +5,7 @@ import { renderPaperBacking, renderTornPaperAsset } from '../engine/torn-edge';
 import { magicWandSelect, smartAutoCutout, createFullMask } from '../engine/segmentation';
 
 interface CanvasViewportProps {
-  image: HTMLImageElement | null;
+  image: HTMLImageElement | HTMLCanvasElement | null;
   mask: Uint8ClampedArray | null;
   onUpdateMask: (newMask: Uint8ClampedArray) => void;
   activeTool: ToolType;
@@ -75,10 +75,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   useEffect(() => { scaleRef.current = scale; }, [scale]);
   useEffect(() => { panRef.current = pan; }, [pan]);
 
-  // Buffer padding around image to allow outer sticker deckle border to expand freely without clipping
+  // Buffer padding around image
   const pad = tornEdge.canvasPadding || 60;
-  const rawW = image ? (image.naturalWidth || image.width) : 0;
-  const rawH = image ? (image.naturalHeight || image.height) : 0;
+  const rawW = image ? ((image as HTMLImageElement).naturalWidth || image.width) : 0;
+  const rawH = image ? ((image as HTMLImageElement).naturalHeight || image.height) : 0;
   const totalW = rawW > 0 ? rawW + pad * 2 : 0;
   const totalH = rawH > 0 ? rawH + pad * 2 : 0;
 
@@ -218,7 +218,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   }, [image, mask, totalW, totalH]);
 
   // Fast GPU Composite of cached Paper + cached Halftone
-  const compositeFinalArtwork = useCallback(() => {
+  const compositeRef = useRef<() => void>(() => {});
+  compositeRef.current = () => {
     if (!image || !halftoneCanvasRef.current || !maskCanvasRef.current || !displayCanvasRef.current || totalW === 0 || totalH === 0) return;
 
     const dispCanvas = displayCanvasRef.current;
@@ -246,9 +247,9 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         refCtx.drawImage(dispCanvas, 0, 0);
       }
     }
-  }, [image, tornEdge, totalW, totalH, renderedCanvasRef]);
+  };
 
-  // 1. Layer A: Pre-render Halftone Texture (Runs when style/contrast/dotsize changes)
+  // 1. Layer A: Pre-render Halftone Texture (Runs ONLY when halftone settings or image change)
   useEffect(() => {
     if (!image || !sourceCanvasRef.current || totalW === 0 || totalH === 0) return;
 
@@ -264,10 +265,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (!htCtx || !srcCtx) return;
 
     renderHalftone(srcCtx, htCtx, totalW, totalH, halftone);
-    compositeFinalArtwork();
-  }, [image, halftone, pad, totalW, totalH, compositeFinalArtwork]);
+    compositeRef.current();
+  }, [image, halftone.mode, halftone.contrast, halftone.dotSize, halftone.invert, pad, totalW, totalH]);
 
-  // 2. Layer B: Pre-render Paper Backing (Runs when mask/paper settings change)
+  // 2. Layer B: Pre-render Paper Backing (Runs ONLY when mask/tornEdge settings change)
   useEffect(() => {
     if (!image || !mask || totalW === 0 || totalH === 0 || isInteracting) return;
 
@@ -281,8 +282,22 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (tornEdge.enabled) {
       renderPaperBacking(pCanvas, mask, totalW, totalH, tornEdge);
     }
-    compositeFinalArtwork();
-  }, [image, mask, tornEdge, pad, totalW, totalH, isInteracting, compositeFinalArtwork]);
+    compositeRef.current();
+  }, [
+    image, 
+    mask, 
+    tornEdge.enabled, 
+    tornEdge.padding, 
+    tornEdge.roughness, 
+    tornEdge.paperColor, 
+    tornEdge.paperTexture,
+    tornEdge.dropShadow,
+    tornEdge.canvasPadding,
+    pad, 
+    totalW, 
+    totalH, 
+    isInteracting
+  ]);
 
   // Fast 60-FPS Live Preview during Active Brush/Eraser Stroke
   const renderLiveStrokePreview = useCallback(() => {
@@ -386,9 +401,9 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
           }
 
           maskCtx.beginPath();
-          maskCtx.moveTo(polygonPointsRef.current[0].x, polygonPointsRef.current[0].y);
-          for (let i = 1; i < polygonPointsRef.current.length; i++) {
-            maskCtx.lineTo(polygonPointsRef.current[i].x, polygonPointsRef.current[i].y);
+          maskCtx.moveTo(polygonPointsRef.current[0].x, polygonPoints[0].y);
+          for (let i = 1; i < polygonPoints.length; i++) {
+            maskCtx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
           }
           maskCtx.closePath();
           maskCtx.fill();
@@ -763,7 +778,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
             <div className="relative overflow-hidden w-full h-full">
               <div className="absolute inset-0 flex items-center justify-center">
                 <img
-                  src={image.src}
+                  src={(image as HTMLImageElement).src || ''}
                   alt="Original"
                   style={{ width: rawW, height: rawH, left: pad, top: pad }}
                   className="absolute object-contain pointer-events-none"

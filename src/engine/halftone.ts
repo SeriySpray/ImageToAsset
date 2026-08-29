@@ -33,7 +33,7 @@ function createContrastLUT(contrast: number, invert: boolean): Uint8Array {
 }
 
 /**
- * High-speed stylized grayscale, halftone dot matrix, hybrid, and engraving renderer
+ * High-speed stylized grayscale, halftone dot matrix, hybrid, and engraving renderer with 32-bit pixel writes
  */
 export function renderHalftone(
   sourceCtx: CanvasRenderingContext2D,
@@ -58,39 +58,35 @@ export function renderHalftone(
   if (!grayCtx) return;
 
   const grayImgData = grayCtx.createImageData(width, height);
-  const grayPixels = grayImgData.data;
+  const grayPixels32 = new Uint32Array(grayImgData.data.buffer);
   const lumBytes = new Uint8Array(width * height);
 
   for (let i = 0; i < width * height; i++) {
     const idx = i * 4;
-    const r = srcPixels[idx];
-    const g = srcPixels[idx + 1];
-    const b = srcPixels[idx + 2];
     const a = srcPixels[idx + 3];
 
     if (a < 5) {
-      grayPixels[idx] = 255;
-      grayPixels[idx + 1] = 255;
-      grayPixels[idx + 2] = 255;
-      grayPixels[idx + 3] = 255;
+      grayPixels32[i] = 0xFFFFFFFF; // Pure white
       lumBytes[i] = 255;
       continue;
     }
+
+    const r = srcPixels[idx];
+    const g = srcPixels[idx + 1];
+    const b = srcPixels[idx + 2];
 
     // Fast integer perceptual luminance (0.2126R + 0.7152G + 0.0722B)
     const rawLum = (r * 54 + g * 183 + b * 19) >> 8;
     const finalVal = lut[rawLum];
 
     lumBytes[i] = finalVal;
-    grayPixels[idx] = finalVal;
-    grayPixels[idx + 1] = finalVal;
-    grayPixels[idx + 2] = finalVal;
-    grayPixels[idx + 3] = 255;
+    // Pack into 32-bit: 0xFF000000 | (val << 16) | (val << 8) | val
+    grayPixels32[i] = 0xFF000000 | (finalVal << 16) | (finalVal << 8) | finalVal;
   }
 
   grayCtx.putImageData(grayImgData, 0, 0);
 
-  // If pure grayscale contrast, output immediately (takes ~1-2ms total!)
+  // If pure grayscale contrast, output immediately (takes ~0.5ms total!)
   if (mode === 'grayscale-contrast') {
     targetCtx.drawImage(grayCanvas, 0, 0);
     return;

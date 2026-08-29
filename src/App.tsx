@@ -23,7 +23,7 @@ export const App: React.FC = () => {
   const [halftone, setHalftone] = useState<HalftoneSettings>(PRESETS[0].halftone);
   const [tornEdge, setTornEdge] = useState<TornEdgeSettings>(PRESETS[0].tornEdge);
 
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [image, setImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
   const rawImageRef = useRef<HTMLImageElement | null>(null);
   const [mask, setMask] = useState<Uint8ClampedArray | null>(null);
   const [undoStack, setUndoStack] = useState<Uint8ClampedArray[]>([]);
@@ -44,8 +44,8 @@ export const App: React.FC = () => {
   const renderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const pad = tornEdge.canvasPadding || 60;
-  const rawW = image ? (image.naturalWidth || image.width) : 0;
-  const rawH = image ? (image.naturalHeight || image.height) : 0;
+  const rawW = image ? ((image as HTMLImageElement).naturalWidth || image.width) : 0;
+  const rawH = image ? ((image as HTMLImageElement).naturalHeight || image.height) : 0;
   const totalW = rawW > 0 ? rawW + pad * 2 : 0;
   const totalH = rawH > 0 ? rawH + pad * 2 : 0;
 
@@ -69,14 +69,17 @@ export const App: React.FC = () => {
     rawImageRef.current = imgElement;
     const origW = imgElement.naturalWidth || imgElement.width;
     const origH = imgElement.naturalHeight || imgElement.height;
-
     const currentPad = tornEdge.canvasPadding || 60;
 
-    // Check if downscaling is needed for interactive editing
+    let targetSource: HTMLImageElement | HTMLCanvasElement = imgElement;
+    let workW = origW;
+    let workH = origH;
+
+    // Fast-path downscale for interactive editing if image exceeds MAX_WORKING_DIM
     if (origW > MAX_WORKING_DIM || origH > MAX_WORKING_DIM) {
       const scaleFactor = MAX_WORKING_DIM / Math.max(origW, origH);
-      const workW = Math.round(origW * scaleFactor);
-      const workH = Math.round(origH * scaleFactor);
+      workW = Math.round(origW * scaleFactor);
+      workH = Math.round(origH * scaleFactor);
 
       const workCanvas = document.createElement('canvas');
       workCanvas.width = workW;
@@ -87,73 +90,40 @@ export const App: React.FC = () => {
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(imgElement, 0, 0, workW, workH);
       }
-
-      const workingImg = new Image();
-      workingImg.onload = () => {
-        setImage(workingImg);
-        const initialMask = initializePaddedMask(workW, workH, currentPad);
-
-        if (autoCutout) {
-          const totalWidth = workW + currentPad * 2;
-          const totalHeight = workH + currentPad * 2;
-          const offCanvas = document.createElement('canvas');
-          offCanvas.width = totalWidth;
-          offCanvas.height = totalHeight;
-          const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
-          if (offCtx) {
-            offCtx.drawImage(workingImg, currentPad, currentPad, workW, workH);
-            smartAutoCutout(offCtx, initialMask, totalWidth, totalHeight, {
-              x0: currentPad,
-              y0: currentPad,
-              x1: currentPad + workW,
-              y1: currentPad + workH,
-            });
-          }
-        }
-
-        setMask(initialMask);
-        setUndoStack([]);
-        setRedoStack([]);
-
-        const maxW = window.innerWidth - 380;
-        const maxH = window.innerHeight - 90;
-        const fitScale = Math.min(1, Math.min(maxW / (workW + currentPad * 2), maxH / (workH + currentPad * 2)) * 0.88);
-        setScale(Math.max(0.15, fitScale));
-        setPan({ x: 0, y: 0 });
-      };
-      workingImg.src = workCanvas.toDataURL('image/png');
-    } else {
-      setImage(imgElement);
-      const initialMask = initializePaddedMask(origW, origH, currentPad);
-
-      if (autoCutout) {
-        const totalWidth = origW + currentPad * 2;
-        const totalHeight = origH + currentPad * 2;
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = totalWidth;
-        offCanvas.height = totalHeight;
-        const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
-        if (offCtx) {
-          offCtx.drawImage(imgElement, currentPad, currentPad, origW, origH);
-          smartAutoCutout(offCtx, initialMask, totalWidth, totalHeight, {
-            x0: currentPad,
-            y0: currentPad,
-            x1: currentPad + origW,
-            y1: currentPad + origH,
-          });
-        }
-      }
-
-      setMask(initialMask);
-      setUndoStack([]);
-      setRedoStack([]);
-
-      const maxW = window.innerWidth - 380;
-      const maxH = window.innerHeight - 90;
-      const fitScale = Math.min(1, Math.min(maxW / (origW + currentPad * 2), maxH / (origH + currentPad * 2)) * 0.88);
-      setScale(Math.max(0.15, fitScale));
-      setPan({ x: 0, y: 0 });
+      targetSource = workCanvas;
     }
+
+    setImage(targetSource);
+
+    const initialMask = initializePaddedMask(workW, workH, currentPad);
+
+    if (autoCutout) {
+      const totalWidth = workW + currentPad * 2;
+      const totalHeight = workH + currentPad * 2;
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = totalWidth;
+      offCanvas.height = totalHeight;
+      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+      if (offCtx) {
+        offCtx.drawImage(targetSource, currentPad, currentPad, workW, workH);
+        smartAutoCutout(offCtx, initialMask, totalWidth, totalHeight, {
+          x0: currentPad,
+          y0: currentPad,
+          x1: currentPad + workW,
+          y1: currentPad + workH,
+        });
+      }
+    }
+
+    setMask(initialMask);
+    setUndoStack([]);
+    setRedoStack([]);
+
+    const maxW = window.innerWidth - 380;
+    const maxH = window.innerHeight - 90;
+    const fitScale = Math.min(1, Math.min(maxW / (workW + currentPad * 2), maxH / (workH + currentPad * 2)) * 0.88);
+    setScale(Math.max(0.15, fitScale));
+    setPan({ x: 0, y: 0 });
   }, [initializePaddedMask, tornEdge.canvasPadding]);
 
   const handleFile = (file: File) => {
@@ -395,7 +365,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Export 1x, 2x, 4x from full resolution
+  // Export 1x, 2x, 4x from full original resolution
   const handleDownload = (exportScale = 1) => {
     const srcImg = rawImageRef.current || image;
     if (!srcImg || !mask || totalW === 0 || totalH === 0) return;

@@ -135,7 +135,7 @@ export function computeDistanceTransform(
 const noiseGenerator = new FastNoise(4242);
 
 /**
- * Ultra-fast paper sticker backing renderer with dual fast-path culling
+ * Ultra-fast paper sticker backing renderer using 32-bit integer pixel writes and multi-stage culling
  */
 export function renderPaperBacking(
   targetCanvas: HTMLCanvasElement,
@@ -151,13 +151,16 @@ export function renderPaperBacking(
 
   const distField = computeDistanceTransform(maskData, width, height);
   const paperImgData = paperCtx.createImageData(width, height);
-  const paperPixels = paperImgData.data;
+  const pixels32 = new Uint32Array(paperImgData.data.buffer);
 
-  // Parse paper background color
+  // Parse paper background color into 32-bit ABGR/RGBA integer
   const hex = settings.paperColor.replace('#', '');
   const pr = parseInt(hex.substring(0, 2), 16) || 255;
   const pg = parseInt(hex.substring(2, 4), 16) || 255;
   const pb = parseInt(hex.substring(4, 6), 16) || 255;
+
+  // Precompute solid 32-bit color: 0xAABBGGRR (Little Endian Canvas Uint32)
+  const solidColor32 = (255 << 24) | (pb << 16) | (pg << 8) | pr;
 
   const { padding, roughness, frequency, octaves, paperTexture } = settings;
   const maxPossiblePadding = padding + roughness * 1.25;
@@ -168,60 +171,51 @@ export function renderPaperBacking(
     const rowOffset = y * width;
     for (let x = 0; x < width; x++) {
       const idx = rowOffset + x;
-      const pixelIdx = idx * 4;
       const dist = distField[idx];
 
-      // Fast path 1: Far outside sticker (skip noise)
+      // Fast path 1: Far outside sticker (skip all math)
       if (dist > maxPossiblePadding) {
-        paperPixels[pixelIdx + 3] = 0;
+        pixels32[idx] = 0;
         continue;
       }
 
       // Fast path 2: Solid core of sticker (skip noise)
       if (dist <= innerCorePadding) {
-        let r = pr;
-        let g = pg;
-        let b = pb;
         if (paperTexture) {
-          const grain = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453 % 1) * 6 - 3;
-          r = Math.max(0, Math.min(255, r + grain));
-          g = Math.max(0, Math.min(255, g + grain));
-          b = Math.max(0, Math.min(255, b + grain));
+          const grain = Math.round((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453 % 1) * 6 - 3);
+          const gr = Math.max(0, Math.min(255, pr + grain));
+          const gg = Math.max(0, Math.min(255, pg + grain));
+          const gb = Math.max(0, Math.min(255, pb + grain));
+          pixels32[idx] = (255 << 24) | (gb << 16) | (gg << 8) | gr;
+        } else {
+          pixels32[idx] = solidColor32;
         }
-        paperPixels[pixelIdx] = r;
-        paperPixels[pixelIdx + 1] = g;
-        paperPixels[pixelIdx + 2] = b;
-        paperPixels[pixelIdx + 3] = 255;
         continue;
       }
 
-      // Fast path 3: Narrow boundary ribbon (evaluate noise ONLY here)
+      // Fast path 3: Narrow boundary ribbon (evaluate noise ONLY on boundary pixels)
       const n1 = noiseGenerator.fbm2D(x * frequency, y * frequency, octaves);
       const n2 = noiseGenerator.noise2D(x * frequency * 4, y * frequency * 4) * 0.25;
       const tornNoise = (n1 + n2) * roughness;
       const effectivePadding = Math.max(2, padding + tornNoise);
 
       if (dist <= effectivePadding) {
-        let r = pr;
-        let g = pg;
-        let b = pb;
+        let gr = pr;
+        let gg = pg;
+        let gb = pb;
 
         if (paperTexture) {
-          const grain = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453 % 1) * 6 - 3;
-          r = Math.max(0, Math.min(255, r + grain));
-          g = Math.max(0, Math.min(255, g + grain));
-          b = Math.max(0, Math.min(255, b + grain));
+          const grain = Math.round((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453 % 1) * 6 - 3);
+          gr = Math.max(0, Math.min(255, pr + grain));
+          gg = Math.max(0, Math.min(255, pg + grain));
+          gb = Math.max(0, Math.min(255, pb + grain));
         }
 
         const edgeDist = effectivePadding - dist;
         const alpha = edgeDist < 1.2 ? Math.floor(Math.max(0, Math.min(1, edgeDist / 1.2)) * 255) : 255;
-
-        paperPixels[pixelIdx] = r;
-        paperPixels[pixelIdx + 1] = g;
-        paperPixels[pixelIdx + 2] = b;
-        paperPixels[pixelIdx + 3] = alpha;
+        pixels32[idx] = (alpha << 24) | (gb << 16) | (gg << 8) | gr;
       } else {
-        paperPixels[pixelIdx + 3] = 0;
+        pixels32[idx] = 0;
       }
     }
   }

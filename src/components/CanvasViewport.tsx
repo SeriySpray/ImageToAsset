@@ -246,23 +246,37 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     onUpdateMask(newMask);
   }, [totalW, totalH, onUpdateMask]);
 
+  const liveClipCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   // Live Stroke Preview for 60 FPS drawing/erasing
   const renderLiveStrokePreview = useCallback(() => {
     if (!displayCanvasRef.current || !halftoneCanvasRef.current || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
     const dispCtx = displayCanvasRef.current.getContext('2d');
     if (!dispCtx) return;
 
-    dispCtx.clearRect(0, 0, totalW, totalH);
+    if (!liveClipCanvasRef.current) {
+      liveClipCanvasRef.current = document.createElement('canvas');
+    }
+    const clipCanvas = liveClipCanvasRef.current;
+    if (clipCanvas.width !== totalW || clipCanvas.height !== totalH) {
+      clipCanvas.width = totalW;
+      clipCanvas.height = totalH;
+    }
+    const clipCtx = clipCanvas.getContext('2d');
+    if (!clipCtx) return;
 
+    // 1. Clip halftone inside current mask
+    clipCtx.clearRect(0, 0, totalW, totalH);
+    clipCtx.drawImage(halftoneCanvasRef.current, 0, 0);
+    clipCtx.globalCompositeOperation = 'destination-in';
+    clipCtx.drawImage(maskCanvasRef.current, 0, 0);
+
+    // 2. Render onto display canvas
+    dispCtx.clearRect(0, 0, totalW, totalH);
     if (tornEdge.enabled && paperCanvasRef.current) {
       dispCtx.drawImage(paperCanvasRef.current, 0, 0);
     }
-
-    dispCtx.save();
-    dispCtx.drawImage(maskCanvasRef.current, 0, 0);
-    dispCtx.globalCompositeOperation = 'source-in';
-    dispCtx.drawImage(halftoneCanvasRef.current, 0, 0);
-    dispCtx.restore();
+    dispCtx.drawImage(clipCanvas, 0, 0);
   }, [totalW, totalH, tornEdge.enabled]);
 
   // Screen to Image coordinates conversion
@@ -549,7 +563,28 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       }
       ctx.restore();
     }
-  }, [image, boxSelection, freehandPoints, mousePos, activeTool, scale, totalW, totalH]);
+
+    // 3. Interactive Circular Cursor for Brush & Eraser
+    if (mousePos && (activeTool === 'brush' || activeTool === 'eraser')) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(mousePos.x, mousePos.y, brushSize, 0, Math.PI * 2);
+      ctx.strokeStyle = activeTool === 'eraser' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 1.5 / scale;
+      ctx.fillStyle = activeTool === 'eraser' 
+        ? 'rgba(255, 255, 255, 0.12)' 
+        : 'rgba(255, 255, 255, 0.18)';
+      ctx.fill();
+      ctx.stroke();
+
+      // Precision Center Crosshair Dot
+      ctx.beginPath();
+      ctx.arc(mousePos.x, mousePos.y, 2.5 / scale, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+    }
+  }, [image, boxSelection, freehandPoints, mousePos, activeTool, brushSize, scale, totalW, totalH]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -583,7 +618,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       return isInteracting ? 'cursor-grabbing' : 'cursor-grab';
     }
     if (activeTool === 'brush' || activeTool === 'eraser') {
-      return 'cursor-crosshair';
+      return 'cursor-none';
     }
     return 'cursor-crosshair';
   };

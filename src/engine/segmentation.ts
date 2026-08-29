@@ -17,9 +17,10 @@ export function createFullMask(width: number, height: number): Uint8ClampedArray
 }
 
 /**
- * Non-Restorative Smart Lasso Eraser / Peeler Engine:
- * Strictly erases background pixels without EVER restoring or reviving previously deleted/erased fragments.
- * The operation is purely subtractive and protective.
+ * Smart Lasso Selection & Isolation Engine:
+ * - Outside the lasso loop: completely erased (0).
+ * - Inside the lasso loop: starts from the lasso line and snaps to the outer contour of the subject.
+ * - Subject inside: preserved (255, or respects previous 0s if already deleted).
  */
 export function smartLassoCutout(
   srcCtx: CanvasRenderingContext2D,
@@ -213,6 +214,7 @@ export function smartLassoCutout(
           const stepDiff = Math.abs(nr - qr) + Math.abs(ng - qg) + Math.abs(nb - qb);
           const seedDiff = Math.abs(nr - sr) + Math.abs(ng - sg) + Math.abs(nb - sb);
 
+          // Stop immediately upon hitting object edge or color jump
           if (edgeBarrier[nidx] || stepDiff > 10 || seedDiff > 20) {
             visited[nidx] = 1;
           } else {
@@ -225,26 +227,23 @@ export function smartLassoCutout(
     }
   }
 
-  // 5. Apply to Output Mask: NEVER restore previously erased (0) pixels!
+  // 5. Apply to Output Mask according to Mode
   if (mode === 'replace') {
-    // Initialize with existing mask state
-    if (existingMask) {
-      outputMask.set(existingMask);
-    } else {
-      outputMask.fill(255);
-    }
+    // Default Lasso: ISOLATE SELECTION (erase everything outside the lasso)
+    outputMask.fill(0);
 
-    // Erase background pixels detected along lasso ribbon
     for (let y = minY; y <= maxY; y++) {
       const rowOffset = y * totalWidth;
       for (let x = minX; x <= maxX; x++) {
         const idx = rowOffset + x;
-        if (isInsideLasso(x, y) && isBackground[idx]) {
-          outputMask[idx] = 0;
+        // If inside lasso and not peeled as background -> Keep subject!
+        if (isInsideLasso(x, y) && !isBackground[idx]) {
+          outputMask[idx] = existingMask ? existingMask[idx] : 255;
         }
       }
     }
   } else if (mode === 'subtract') {
+    // Alt: Subtract the lassoed subject from existing mask
     if (existingMask) {
       outputMask.set(existingMask);
     } else {
@@ -261,6 +260,7 @@ export function smartLassoCutout(
       }
     }
   } else if (mode === 'add') {
+    // Shift: Add the lassoed subject to existing mask
     if (existingMask) {
       outputMask.set(existingMask);
     } else {

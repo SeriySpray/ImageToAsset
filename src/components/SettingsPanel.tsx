@@ -7,7 +7,6 @@ import {
   Contrast, 
   Eye, 
   Layers, 
-  Image as ImageIcon,
   X,
   Grid
 } from 'lucide-react';
@@ -45,7 +44,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     { id: 'graphic-dots', name: 'Графічний растр', icon: <Grid className="w-3.5 h-3.5" /> },
     { id: 'hybrid', name: 'Фото + Растр', icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'engraving', name: 'Гравюра', icon: <Activity className="w-3.5 h-3.5" /> },
-    { id: 'grayscale-contrast', name: 'Контрастне ч/б', icon: <ImageIcon className="w-3.5 h-3.5" /> },
   ];
 
   const paperColors = [
@@ -56,7 +54,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     { name: 'Темний графіт', value: '#1a1a1a' },
   ];
 
-  const showDotSize = halftone.mode !== 'grayscale-contrast';
+  const showDotSize = true;
 
   return (
     <>

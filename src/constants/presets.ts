@@ -2,30 +2,6 @@ import { Preset } from '../types';
 
 export const PRESETS: Preset[] = [
   {
-    id: 'grayscale-rich',
-    name: 'Контрастне ч/б (Grayscale)',
-    description: 'Глибокі тіні та плавні відтінки сірого з білим рваним контуром',
-    halftone: {
-      mode: 'grayscale-contrast',
-      contrast: 50,
-      dotSize: 6,
-      invert: false,
-    },
-    tornEdge: {
-      enabled: true,
-      padding: 24,
-      roughness: 14,
-      canvasPadding: 0,
-      frequency: 0.07,
-      octaves: 3,
-      paperColor: '#ffffff',
-      paperTexture: true,
-      dropShadow: true,
-      shadowBlur: 18,
-      shadowOpacity: 0.3,
-    },
-  },
-  {
     id: 'vintage-dots',
     name: 'Фото-растр (Газетний)',
     description: 'Класичний газетний растр 45° з плавними півтонами для фотографій',

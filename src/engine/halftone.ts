@@ -89,14 +89,6 @@ export function renderHalftone(
 
   grayCtx.putImageData(grayImgData, 0, 0);
 
-  // Mode: Pure Grayscale Contrast (instant ~1ms)
-  if (mode === 'grayscale-contrast') {
-    targetCtx.drawImage(grayCanvas, 0, 0);
-    const t1 = performance.now();
-    console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
-    return;
-  }
-
   // 2. Mode: Classic Photo Halftone Raster (Original Newspaper Screen for Photos)
   if (mode === 'dots' || mode === 'hybrid') {
     const htPatternCanvas = document.createElement('canvas');

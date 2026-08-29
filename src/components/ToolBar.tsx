@@ -47,9 +47,9 @@ export const ToolBar: React.FC<ToolBarProps> = ({
   if (!hasImage) return null;
 
   return (
-    <aside className="w-13 border-r border-[#262626] bg-[#0a0a0a] flex flex-col items-center py-3 justify-between z-20 select-none font-mono">
+    <aside className="w-16 border-r border-[#262626] bg-[#0a0a0a] flex flex-col items-center py-3 justify-between z-20 select-none font-mono">
       {/* Primary Selection Tools */}
-      <div className="flex flex-col items-center gap-1.5 w-full px-1.5">
+      <div className="flex flex-col items-center gap-1.5 w-full px-2">
         {tools.map((tool) => {
           const isActive = activeTool === tool.id;
           const isMagic = tool.id === 'magic-wand';
@@ -82,19 +82,19 @@ export const ToolBar: React.FC<ToolBarProps> = ({
       </div>
 
       {/* Secondary Quick Operations */}
-      <div className="flex flex-col items-center gap-2 w-full px-1.5 pt-3 border-t border-[#262626]">
-        {/* Brush Size Indicator */}
+      <div className="flex flex-col items-center gap-2 w-full px-2 pt-3 border-t border-[#262626]">
+        {/* Brush Size Indicator & Slider */}
         {(activeTool === 'brush' || activeTool === 'eraser') && (
-          <div className="flex flex-col items-center gap-1 w-full mb-1">
-            <span className="text-[9px] font-mono text-neutral-400">{brushSize}px</span>
+          <div className="flex flex-col items-center gap-1.5 w-full px-0.5 mb-1">
+            <span className="text-[10px] font-mono text-neutral-300 font-bold">{brushSize}px</span>
             <input
               type="range"
               min="4"
               max="120"
               value={brushSize}
               onChange={(e) => onChangeBrushSize(Number(e.target.value))}
-              title="Розмір пензля ([ / ])"
-              className="w-7 accent-white cursor-pointer h-1 bg-[#262626] rounded"
+              title="Розмір пензля / ластика ([ / ])"
+              className="w-full accent-white cursor-pointer h-1.5 bg-[#262626] rounded appearance-none"
             />
           </div>
         )}

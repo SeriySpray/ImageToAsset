@@ -45,19 +45,19 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="h-13 border-b border-[#262626] bg-[#0a0a0a] px-4 flex items-center justify-between z-30 select-none font-mono">
-      {/* Left: Branding & Upload */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded bg-white flex items-center justify-center text-black font-bold text-xs tracking-wider">
-            IA
-          </div>
-          <h1 className="text-xs font-semibold text-white tracking-wide">
-            ImageToAsset
-          </h1>
+      {/* Left: Branding only */}
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded bg-white flex items-center justify-center text-black font-bold text-xs tracking-wider">
+          IA
         </div>
+        <h1 className="text-xs font-semibold text-white tracking-wide">
+          ImageToAsset
+        </h1>
+      </div>
 
-        <div className="h-4 w-px bg-[#262626] mx-1" />
-
+      {/* Right: All Actions & Controls */}
+      <div className="flex items-center gap-3">
+        {/* Upload Button */}
         <button
           onClick={onUploadClick}
           className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-neutral-300 bg-[#141414] hover:bg-[#1f1f1f] hover:text-white border border-[#262626] hover:border-[#404040] rounded transition cursor-pointer"
@@ -65,42 +65,44 @@ export const Header: React.FC<HeaderProps> = ({
           <Upload className="w-3.5 h-3.5 text-neutral-400" />
           <span>Завантажити фото</span>
         </button>
-      </div>
 
-      {/* Center: Quick Navigation & View Tools */}
-      <div className="flex items-center gap-2">
+        {/* Quick Navigation & View Tools */}
         {hasImage && (
-          <div className="flex items-center gap-1 bg-[#141414] border border-[#262626] p-0.5 rounded">
-            <button
-              onClick={onUndo}
-              disabled={!canUndo}
-              title="Скасувати (Ctrl+Z)"
-              className="p-1.5 text-neutral-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed rounded hover:bg-[#222222] transition cursor-pointer"
-            >
-              <Undo2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={onRedo}
-              disabled={!canRedo}
-              title="Повторити (Ctrl+Y / Ctrl+Shift+Z)"
-              className="p-1.5 text-neutral-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed rounded hover:bg-[#222222] transition cursor-pointer"
-            >
-              <Redo2 className="w-3.5 h-3.5" />
-            </button>
-            <div className="h-3.5 w-px bg-[#262626] mx-0.5" />
-            <button
-              onClick={onResetZoom}
-              title="Скинути масштаб (100%)"
-              className="p-1.5 text-neutral-400 hover:text-white hover:bg-[#222222] rounded transition cursor-pointer"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
+          <>
+            <div className="h-4 w-px bg-[#262626]" />
 
-      {/* Right: Export & Copy Actions */}
-      <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-[#141414] border border-[#262626] p-0.5 rounded">
+              <button
+                onClick={onUndo}
+                disabled={!canUndo}
+                title="Скасувати (Ctrl+Z)"
+                className="p-1.5 text-neutral-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed rounded hover:bg-[#222222] transition cursor-pointer"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={onRedo}
+                disabled={!canRedo}
+                title="Повторити (Ctrl+Y / Ctrl+Shift+Z)"
+                className="p-1.5 text-neutral-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed rounded hover:bg-[#222222] transition cursor-pointer"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+              </button>
+              <div className="h-3.5 w-px bg-[#262626] mx-0.5" />
+              <button
+                onClick={onResetZoom}
+                title="Скинути масштаб (100%)"
+                className="p-1.5 text-neutral-400 hover:text-white hover:bg-[#222222] rounded transition cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </>
+        )}
+
+        {hasImage && <div className="h-4 w-px bg-[#262626]" />}
+
+        {/* Export & Copy Actions */}
         <button
           onClick={handleCopy}
           disabled={!hasImage}

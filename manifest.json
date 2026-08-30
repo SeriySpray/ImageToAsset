@@ -1,0 +1,23 @@
+﻿{
+  "name": "ImageToAsset - Halftone Sticker Studio",
+  "short_name": "ImageToAsset",
+  "description": "Transform any photo into monochrome halftone stickers with torn paper edges and 3D shadows.",
+  "start_url": "/ImageToAsset/",
+  "scope": "/ImageToAsset/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/ImageToAsset/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/ImageToAsset/social-preview.png",
+      "sizes": "1280x640",
+      "type": "image/png"
+    }
+  ]
+}

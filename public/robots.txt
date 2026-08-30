@@ -1,0 +1,4 @@
+﻿User-agent: *
+Allow: /
+
+Sitemap: https://seriyspray.github.io/ImageToAsset/sitemap.xml

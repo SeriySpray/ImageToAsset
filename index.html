@@ -2,14 +2,95 @@
 <html lang="uk" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'><path d='m21 16-4 4-4-4'/><path d='M17 20V4'/><path d='m3 8 4-4 4 4'/><path d='M7 4v16'/></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ImageToAsset - Halftone Asset Studio</title>
+
+    <!-- Primary Meta Tags -->
+    <title>ImageToAsset — Halftone Sticker &amp; Presentation Asset Studio | Free Online Tool</title>
+    <meta name="title" content="ImageToAsset — Halftone Sticker &amp; Presentation Asset Studio | Free Online Tool" />
+    <meta name="description" content="Free online tool to turn photos into monochrome halftone stickers with authentic torn paper edges, crumpled texture &amp; 3D shadows on transparent backgrounds. Instant PNG export." />
+    <meta name="keywords" content="halftone generator, halftone photo effect, sticker maker, torn paper edge, halftone dot matrix, engraving effect, photo to sticker, transparent png sticker, free online halftone tool, deckle edge generator, graphic asset studio, dither art, 8SED algorithm" />
+    <meta name="author" content="Serhii Tsymbal (SeriySpray)" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <link rel="canonical" href="https://seriyspray.github.io/ImageToAsset/" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="application-name" content="ImageToAsset" />
+
+    <!-- Favicons & App Manifest -->
+    <link rel="icon" type="image/svg+xml" href="/ImageToAsset/favicon.svg" />
+    <link rel="apple-touch-icon" href="/ImageToAsset/social-preview.png" />
+    <link rel="manifest" href="/ImageToAsset/manifest.json" />
+
+    <!-- Open Graph / Facebook / LinkedIn / Discord / Telegram -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ImageToAsset" />
+    <meta property="og:url" content="https://seriyspray.github.io/ImageToAsset/" />
+    <meta property="og:title" content="ImageToAsset — Halftone Sticker &amp; Presentation Asset Studio" />
+    <meta property="og:description" content="Transform photos into authentic monochrome halftone stickers with procedural torn paper edges, crumpled texture and 3D shadows. Free, client-side, instant PNG export." />
+    <meta property="og:image" content="https://seriyspray.github.io/ImageToAsset/social-preview.png" />
+    <meta property="og:image:secure_url" content="https://seriyspray.github.io/ImageToAsset/social-preview.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta property="og:image:alt" content="ImageToAsset Studio Preview - Halftone Sticker Generator" />
+    <meta property="og:locale" content="uk_UA" />
+    <meta property="og:locale:alternate" content="en_US" />
+
+    <!-- Twitter Cards -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://seriyspray.github.io/ImageToAsset/" />
+    <meta name="twitter:title" content="ImageToAsset — Halftone Sticker &amp; Presentation Asset Studio" />
+    <meta name="twitter:description" content="Transform photos into halftone stickers with torn paper deckle edges and 3D shadows directly in your browser." />
+    <meta name="twitter:image" content="https://seriyspray.github.io/ImageToAsset/social-preview.png" />
+    <meta name="twitter:creator" content="@SeriySpray" />
+
+    <!-- Schema.org JSON-LD Structured Data for Google Rich Results -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "ImageToAsset",
+      "alternateName": "Halftone Sticker & Presentation Asset Studio",
+      "url": "https://seriyspray.github.io/ImageToAsset/",
+      "description": "Interactive web utility and graphic studio to isolate objects in photos and convert them into monochrome halftone presentation assets with authentic torn paper edges and 3D shadows on transparent backgrounds.",
+      "applicationCategory": "DesignApplication",
+      "operatingSystem": "All",
+      "browserRequirements": "Requires JavaScript and HTML5 Canvas support",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "Serhii Tsymbal",
+        "url": "https://github.com/SeriySpray"
+      },
+      "image": "https://seriyspray.github.io/ImageToAsset/social-preview.png",
+      "screenshot": "https://seriyspray.github.io/ImageToAsset/social-preview.png",
+      "featureList": [
+        "Authentic Halftone Dot Matrix, Lines, Hybrid and Engraving styles",
+        "Procedural 8SED Torn Paper Deckle Edge generator with Simplex Noise",
+        "Crumpled paper realistic lighting texture",
+        "Interactive Smart Lasso segmentation with First-Hit Edge Barrier",
+        "Instant transparent PNG clipboard copy (Ctrl+C) and 1-click export",
+        "Zero server upload - 100% private client-side processing"
+      ]
+    }
+    </script>
+
+    <!-- Typography & Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
   <body class="bg-[#000000] text-[#d4d4d4] font-['JetBrains_Mono',monospace] antialiased selection:bg-white selection:text-black min-h-screen overflow-hidden">
+    <noscript>
+      <div style="padding: 2rem; color: #fff; background: #000; font-family: monospace;">
+        <h1>ImageToAsset — Halftone Sticker &amp; Presentation Asset Studio</h1>
+        <p>ImageToAsset is an interactive web studio for transforming photos into monochrome halftone presentation assets with authentic torn paper edges and 3D shadows on transparent backgrounds.</p>
+        <p>Please enable JavaScript in your browser to run this application.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

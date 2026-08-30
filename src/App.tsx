@@ -11,10 +11,12 @@ import { ToolBar } from './components/ToolBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { CanvasViewport } from './components/CanvasViewport';
 import { createEmptyMask } from './engine/segmentation';
+import { Language, translations, getStoredLanguage, setStoredLanguage } from './i18n';
 
 const MAX_WORKING_DIM = 1400;
 
 export const App: React.FC = () => {
+  const [language, setLanguage] = useState<Language>(getStoredLanguage);
   const [halftone, setHalftone] = useState<HalftoneSettings>(PRESETS[0].halftone);
   const [tornEdge, setTornEdge] = useState<TornEdgeSettings>({
     ...PRESETS[0].tornEdge,
@@ -52,6 +54,11 @@ export const App: React.FC = () => {
   const rawH = image ? ((image as HTMLImageElement).naturalHeight || image.height) : 0;
   const totalW = rawW > 0 ? rawW + pad * 2 : 0;
   const totalH = rawH > 0 ? rawH + pad * 2 : 0;
+
+  const handleSelectLanguage = useCallback((lang: Language) => {
+    setLanguage(lang);
+    setStoredLanguage(lang);
+  }, []);
 
   // Initialize mask from image, automatically extracting alpha transparency from PNG/WebP files
   const initializePaddedMask = useCallback((source: HTMLImageElement | HTMLCanvasElement, width: number, height: number, padding: number) => {
@@ -157,8 +164,9 @@ export const App: React.FC = () => {
     setUndoStack([]);
     setRedoStack([]);
 
-    const maxW = window.innerWidth - 380;
-    const maxH = window.innerHeight - 90;
+    const isMobileOrTablet = window.innerWidth < 1024;
+    const maxW = isMobileOrTablet ? window.innerWidth - 32 : window.innerWidth - 380;
+    const maxH = isMobileOrTablet ? window.innerHeight - 130 : window.innerHeight - 90;
     const fitScale = Math.min(1, Math.min(maxW / (workW + currentPad * 2), maxH / (workH + currentPad * 2)) * 0.88);
     setScale(Math.max(0.15, fitScale));
     setPan({ x: 0, y: 0 });
@@ -394,14 +402,28 @@ export const App: React.FC = () => {
     }, 'image/png');
   }, [totalW, totalH]);
 
-  const handleResetZoom = () => {
-    if (!image) return;
-    const maxW = window.innerWidth - 380;
-    const maxH = window.innerHeight - 90;
+  const handleResetZoom = useCallback(() => {
+    if (!image || totalW === 0 || totalH === 0) return;
+    const isMobileOrTablet = window.innerWidth < 1024;
+    const maxW = isMobileOrTablet ? window.innerWidth - 32 : window.innerWidth - 380;
+    const maxH = isMobileOrTablet ? window.innerHeight - 130 : window.innerHeight - 90;
     const fitScale = Math.min(1, Math.min(maxW / totalW, maxH / totalH) * 0.88);
     setScale(Math.max(0.15, fitScale));
     setPan({ x: 0, y: 0 });
-  };
+  }, [image, totalW, totalH]);
+
+  // Window resize handler to maintain adaptive layouts
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsMobileSettingsOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const currentT = translations[language];
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#000000] text-[#d4d4d4] overflow-hidden font-mono select-none">
@@ -431,10 +453,13 @@ export const App: React.FC = () => {
         hasImage={image !== null}
         onToggleMobileSettings={() => setIsMobileSettingsOpen((prev) => !prev)}
         isMobileSettingsOpen={isMobileSettingsOpen}
+        currentLang={language}
+        onSelectLanguage={handleSelectLanguage}
+        t={currentT.header}
       />
 
       {/* Main Workspace */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-1 overflow-hidden relative min-h-0">
         {/* Left Toolbar / Mobile Bottom Floating Dock */}
         <ToolBar
           activeTool={activeTool}
@@ -447,6 +472,7 @@ export const App: React.FC = () => {
           onClearMask={handleClearMask}
           onFillAllMask={handleFillAllMask}
           hasImage={image !== null}
+          t={currentT.toolbar}
         />
 
         {/* Central Canvas Stage */}
@@ -468,6 +494,7 @@ export const App: React.FC = () => {
             setPan(p);
           }}
           renderedCanvasRef={renderedCanvasRef}
+          t={currentT.viewport}
         />
 
         {/* Right Settings Panel / Mobile Slide-Over Drawer */}
@@ -482,6 +509,7 @@ export const App: React.FC = () => {
           hasImage={image !== null}
           isOpen={isMobileSettingsOpen}
           onClose={() => setIsMobileSettingsOpen(false)}
+          t={currentT.settings}
         />
       </div>
     </div>

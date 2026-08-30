@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ToolType, Point, HalftoneSettings, TornEdgeSettings } from '../types';
+import { Translations } from '../i18n';
 import { renderHalftone } from '../engine/halftone';
 import { renderPaperBacking, renderTornPaperAsset } from '../engine/torn-edge';
 import { smartLassoCutout } from '../engine/segmentation';
@@ -19,6 +20,7 @@ interface CanvasViewportProps {
   pan: Point;
   onUpdateView: (scale: number, pan: Point) => void;
   renderedCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  t: Translations['viewport'];
 }
 
 export const CanvasViewport: React.FC<CanvasViewportProps> = ({
@@ -35,6 +37,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   pan,
   onUpdateView,
   renderedCanvasRef,
+  t,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sourceCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -938,22 +941,22 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
       {/* Empty State Upload Dropzone */}
       {!image && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center font-mono">
-          <div className="max-w-md w-full p-8 rounded border border-[#262626] bg-[#0a0a0a] shadow-2xl flex flex-col items-center gap-4">
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-4 sm:p-6 text-center font-mono">
+          <div className="max-w-md w-full p-6 sm:p-8 rounded border border-[#262626] bg-[#0a0a0a] shadow-2xl flex flex-col items-center gap-4">
             <div className="w-12 h-12 rounded bg-[#141414] border border-[#262626] flex items-center justify-center text-white font-bold text-sm">
               IA
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white mb-1">
-                Перетягніть фото сюди або вставте з буфера (Ctrl+V)
+              <h3 className="text-xs sm:text-sm font-semibold text-white mb-1.5 leading-snug">
+                {t.dropzoneTitle}
               </h3>
-              <p className="text-xs text-neutral-400">
-                Підтримуються будь-які PNG, JPG, WebP або мобільні фотографії
+              <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+                {t.dropzoneSubtitle}
               </p>
             </div>
 
             <label className="py-2 px-4 rounded bg-white text-black font-semibold text-xs transition cursor-pointer hover:bg-neutral-200">
-              <span>Обрати файл з диска</span>
+              <span>{t.browseFiles}</span>
               <input
                 type="file"
                 accept="image/*"

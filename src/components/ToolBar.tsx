@@ -11,6 +11,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { ToolType } from '../types';
+import { Translations } from '../i18n';
 
 interface ToolBarProps {
   activeTool: ToolType;
@@ -23,6 +24,7 @@ interface ToolBarProps {
   onClearMask: () => void;
   onFillAllMask: () => void;
   hasImage: boolean;
+  t: Translations['toolbar'];
 }
 
 export const ToolBar: React.FC<ToolBarProps> = ({
@@ -34,14 +36,15 @@ export const ToolBar: React.FC<ToolBarProps> = ({
   onClearMask,
   onFillAllMask,
   hasImage,
+  t,
 }) => {
   const tools: { id: ToolType; name: string; icon: React.ReactNode; shortcut: string }[] = [
-    { id: 'magic-wand', name: 'Магічне ласо / Авто-вирізання (W)', icon: <Wand2 className="w-4 h-4" />, shortcut: 'W' },
-    { id: 'brush', name: 'Пензель маски (B)', icon: <Paintbrush className="w-4 h-4" />, shortcut: 'B' },
-    { id: 'eraser', name: 'Ластик маски (E)', icon: <Eraser className="w-4 h-4" />, shortcut: 'E' },
-    { id: 'box-select', name: 'Виділення прямокутником (M)', icon: <Square className="w-4 h-4" />, shortcut: 'M' },
-    { id: 'lasso', name: 'Довільне ласо (L)', icon: <Lasso className="w-4 h-4" />, shortcut: 'L' },
-    { id: 'pan', name: 'Панорамування / Зум (H / Space)', icon: <Hand className="w-4 h-4" />, shortcut: 'H' },
+    { id: 'magic-wand', name: t.tools.magicWand, icon: <Wand2 className="w-4 h-4" />, shortcut: 'W' },
+    { id: 'brush', name: t.tools.brush, icon: <Paintbrush className="w-4 h-4" />, shortcut: 'B' },
+    { id: 'eraser', name: t.tools.eraser, icon: <Eraser className="w-4 h-4" />, shortcut: 'E' },
+    { id: 'box-select', name: t.tools.boxSelect, icon: <Square className="w-4 h-4" />, shortcut: 'M' },
+    { id: 'lasso', name: t.tools.lasso, icon: <Lasso className="w-4 h-4" />, shortcut: 'L' },
+    { id: 'pan', name: t.tools.pan, icon: <Hand className="w-4 h-4" />, shortcut: 'H' },
   ];
 
   if (!hasImage) return null;
@@ -58,14 +61,14 @@ export const ToolBar: React.FC<ToolBarProps> = ({
             max="120"
             value={brushSize}
             onChange={(e) => onChangeBrushSize(Number(e.target.value))}
-            title="Розмір пензля / ластика"
+            title={t.brushSize}
             className="w-32 accent-white cursor-pointer h-1.5 bg-[#262626] rounded appearance-none"
           />
         </div>
       )}
 
       {/* Main ToolBar: Desktop Left Sidebar + Mobile Bottom Floating Dock */}
-      <aside className="fixed bottom-3 left-1/2 -translate-x-1/2 lg:static lg:translate-x-0 z-30 lg:z-20 w-auto max-w-[95vw] lg:w-16 lg:h-full border border-[#262626] lg:border-t-0 lg:border-b-0 lg:border-l-0 lg:border-r bg-[#0a0a0a]/95 lg:bg-[#0a0a0a] backdrop-blur-md lg:backdrop-blur-none rounded-2xl lg:rounded-none p-1.5 lg:py-3 lg:px-2 flex flex-row lg:flex-col items-center justify-between shadow-2xl lg:shadow-none select-none font-mono">
+      <aside className="fixed bottom-3 left-1/2 -translate-x-1/2 lg:static lg:translate-x-0 z-30 lg:z-20 w-auto max-w-[96vw] lg:w-16 lg:h-full border border-[#262626] lg:border-t-0 lg:border-b-0 lg:border-l-0 lg:border-r bg-[#0a0a0a]/95 lg:bg-[#0a0a0a] backdrop-blur-md lg:backdrop-blur-none rounded-2xl lg:rounded-none p-1.5 lg:py-3 lg:px-2 flex flex-row lg:flex-col items-center justify-between shadow-2xl lg:shadow-none select-none font-mono shrink-0">
         {/* Primary Selection Tools */}
         <div className="flex flex-row lg:flex-col items-center gap-1.5 w-auto lg:w-full">
           {tools.map((tool) => {
@@ -85,12 +88,13 @@ export const ToolBar: React.FC<ToolBarProps> = ({
               <button
                 key={tool.id}
                 onClick={() => onSelectTool(tool.id)}
-                title={`${tool.name}`}
+                title={tool.name}
+                aria-label={tool.name}
                 className={`w-9 h-9 rounded flex items-center justify-center transition relative group cursor-pointer ${buttonStyle}`}
               >
                 {tool.icon}
 
-                {/* Tooltip */}
+                {/* Desktop Tooltip */}
                 <div className="hidden lg:block absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-neutral-200 text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
                   {tool.name}
                 </div>
@@ -114,7 +118,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
                 max="120"
                 value={brushSize}
                 onChange={(e) => onChangeBrushSize(Number(e.target.value))}
-                title="Розмір пензля / ластика ([ / ])"
+                title={t.brushSize}
                 className="w-full accent-white cursor-pointer h-1.5 bg-[#262626] rounded appearance-none"
               />
             </div>
@@ -123,36 +127,39 @@ export const ToolBar: React.FC<ToolBarProps> = ({
           {/* Select All */}
           <button
             onClick={onFillAllMask}
-            title="Виділити все полотно"
+            title={t.selectAllTooltip}
+            aria-label={t.selectAll}
             className="w-8 h-8 rounded flex items-center justify-center text-neutral-400 hover:text-white hover:bg-[#181818] transition relative group cursor-pointer"
           >
             <Maximize className="w-3.5 h-3.5" />
             <div className="hidden lg:block absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-neutral-200 text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
-              Виділити все
+              {t.selectAll}
             </div>
           </button>
 
           {/* Invert Mask */}
           <button
             onClick={onInvertMask}
-            title="Інвертувати маску"
+            title={t.invertMaskTooltip}
+            aria-label={t.invertMask}
             className="w-8 h-8 rounded flex items-center justify-center text-neutral-400 hover:text-white hover:bg-[#181818] transition relative group cursor-pointer"
           >
             <FlipHorizontal className="w-3.5 h-3.5" />
             <div className="hidden lg:block absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-neutral-200 text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
-              Інвертувати маску
+              {t.invertMask}
             </div>
           </button>
 
           {/* Clear Mask */}
           <button
             onClick={onClearMask}
-            title="Очистити всю маску"
+            title={t.clearAllTooltip}
+            aria-label={t.clearAll}
             className="w-8 h-8 rounded flex items-center justify-center text-neutral-400 hover:text-white hover:bg-[#181818] transition relative group cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <div className="hidden lg:block absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-white text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
-              Очистити все
+              {t.clearAll}
             </div>
           </button>
         </div>

@@ -3,7 +3,7 @@ import { HalftoneSettings } from '../types';
 /**
  * Precomputes a 256-entry lookup table (LUT) for instant S-curve contrast mapping in 0.01ms
  */
-function createContrastLUT(contrast: number, invert: boolean): Uint8Array {
+function createContrastLUT(contrast: number): Uint8Array {
   const lut = new Uint8Array(256);
   const c = Math.max(0, Math.min(100, contrast)) / 100;
   const blackFloor = c * 0.12;
@@ -27,7 +27,7 @@ function createContrastLUT(contrast: number, invert: boolean): Uint8Array {
     }
 
     const clamped = Math.max(0, Math.min(1, val));
-    lut[i] = Math.round((invert ? 1 - clamped : clamped) * 255);
+    lut[i] = Math.round(clamped * 255);
   }
   return lut;
 }
@@ -35,7 +35,7 @@ function createContrastLUT(contrast: number, invert: boolean): Uint8Array {
 const INV_SQRT2 = 0.7071067811865476;
 
 /**
- * Ultra-high-speed pixel-grid rasterizer for 45° Halftone Dot Matrix, Hybrid, Graphic Dots, and Grayscale in 8ms
+ * Ultra-high-speed pixel-grid rasterizer for 45° Halftone Dot Matrix, Hybrid, Graphic Dots, and Engraving in 8ms
  */
 export function renderHalftone(
   sourceCtx: CanvasRenderingContext2D,
@@ -50,8 +50,8 @@ export function renderHalftone(
   const imgData = sourceCtx.getImageData(0, 0, width, height);
   const srcPixels = imgData.data;
 
-  const { mode, contrast, dotSize, invert } = settings;
-  const lut = createContrastLUT(contrast, invert);
+  const { mode, contrast, dotSize } = settings;
+  const lut = createContrastLUT(contrast);
 
   // 1. Generate High-Contrast Rich Grayscale Base
   const grayCanvas = document.createElement('canvas');
@@ -117,7 +117,7 @@ export function renderHalftone(
         }
 
         const sampleVal = lumBytes[i];
-        const darkness = invert ? sampleVal / 255 : (255 - sampleVal) / 255;
+        const darkness = (255 - sampleVal) / 255;
 
         // Pure white background
         if (darkness <= 0.03) {
@@ -242,7 +242,7 @@ export function renderHalftone(
         const iyc = Math.max(0, Math.min(height - 1, (yc + 0.5) | 0));
 
         const centerLum = lumBytes[iyc * width + ixc];
-        const rawDarkness = invert ? centerLum / 255 : (255 - centerLum) / 255;
+        const rawDarkness = (255 - centerLum) / 255;
 
         if (rawDarkness <= 0.03) {
           patternPixels32[i] = 0xFFFFFFFF;
@@ -291,7 +291,7 @@ export function renderHalftone(
     htCtx.fillStyle = '#ffffff';
     htCtx.fillRect(0, 0, width, height);
 
-    const inkColor = invert ? '#ffffff' : '#000000';
+    const inkColor = '#000000';
     htCtx.strokeStyle = inkColor;
     htCtx.lineWidth = 1;
     htCtx.lineCap = 'round';
@@ -325,7 +325,7 @@ export function renderHalftone(
         const ix = Math.floor(x);
         const iy = Math.floor(y);
         const sampleVal = lumBytes[iy * width + ix];
-        const darkness = invert ? sampleVal / 255 : (255 - sampleVal) / 255;
+        const darkness = (255 - sampleVal) / 255;
 
         if (darkness > 0.15) {
           const thickness = Math.max(0.6, darkness * gridStep * 0.85);

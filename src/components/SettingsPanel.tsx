@@ -54,8 +54,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     { name: 'Темний графіт', value: '#1a1a1a' },
   ];
 
-  const showDotSize = true;
-
   return (
     <>
       {/* Mobile Backdrop Overlay */}
@@ -138,43 +136,24 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             />
           </div>
 
-          {/* Dot Size (Only when raster is active) */}
-          {showDotSize && (
-            <div>
-              <div className="flex justify-between text-[11px] mb-1.5">
-                <span className="text-neutral-300 flex items-center gap-1.5 font-medium">
-                  <CircleDot className="w-3 h-3 text-neutral-400" />
-                  Розмір елемента растру
-                </span>
-                <span className="font-mono text-white font-bold">{halftone.dotSize}px</span>
-              </div>
-              <input
-                type="range"
-                min="2"
-                max="18"
-                step="0.5"
-                value={halftone.dotSize}
-                onChange={(e) => onChangeHalftone({ dotSize: Number(e.target.value) })}
-                className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
-              />
+          {/* Dot Size */}
+          <div>
+            <div className="flex justify-between text-[11px] mb-1.5">
+              <span className="text-neutral-300 flex items-center gap-1.5 font-medium">
+                <CircleDot className="w-3 h-3 text-neutral-400" />
+                Розмір елемента растру
+              </span>
+              <span className="font-mono text-white font-bold">{halftone.dotSize}px</span>
             </div>
-          )}
-
-          {/* Invert */}
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-[11px] text-neutral-300 font-medium">Інвертувати кольори</span>
-            <button
-              onClick={() => onChangeHalftone({ invert: !halftone.invert })}
-              className={`w-8 h-4 rounded-full transition relative p-0.5 cursor-pointer ${
-                halftone.invert ? 'bg-white' : 'bg-[#262626]'
-              }`}
-            >
-              <div
-                className={`w-3 h-3 rounded-full transition transform ${
-                  halftone.invert ? 'bg-black translate-x-4' : 'bg-neutral-400 translate-x-0'
-                }`}
-              />
-            </button>
+            <input
+              type="range"
+              min="2"
+              max="18"
+              step="0.5"
+              value={halftone.dotSize}
+              onChange={(e) => onChangeHalftone({ dotSize: Number(e.target.value) })}
+              className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
+            />
           </div>
         </div>
       </div>
@@ -189,7 +168,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </h2>
           </div>
           <button
-            onClick={() => onChangeTornEdge({ enabled: !tornEdge.enabled })}
+            onClick={() => onChangeTornEdge({ 
+              enabled: !tornEdge.enabled,
+              padding: tornEdge.padding || 20,
+              roughness: tornEdge.roughness || 3,
+              shadowBlur: tornEdge.shadowBlur || 48
+            })}
             className={`w-8 h-4 rounded-full transition relative p-0.5 cursor-pointer ${
               tornEdge.enabled ? 'bg-white' : 'bg-[#262626]'
             }`}
@@ -320,13 +304,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div>
                   <div className="flex justify-between text-[11px] mb-1.5">
                     <span className="text-neutral-400 font-medium">Розмір / розмиття тіні</span>
-                    <span className="font-mono text-white font-bold">{tornEdge.shadowBlur || 18}px</span>
+                    <span className="font-mono text-white font-bold">{tornEdge.shadowBlur ?? 48}px</span>
                   </div>
                   <input
                     type="range"
                     min="4"
                     max="48"
-                    value={tornEdge.shadowBlur || 18}
+                    value={tornEdge.shadowBlur ?? 48}
                     onChange={(e) => onChangeTornEdge({ shadowBlur: Number(e.target.value) })}
                     className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
                   />

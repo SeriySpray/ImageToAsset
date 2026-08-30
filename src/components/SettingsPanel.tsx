@@ -172,7 +172,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               enabled: !tornEdge.enabled,
               padding: tornEdge.padding || 20,
               roughness: tornEdge.roughness || 3,
-              shadowBlur: tornEdge.shadowBlur || 48
+              shadowBlur: tornEdge.shadowBlur || 50
             })}
             className={`w-8 h-4 rounded-full transition relative p-0.5 cursor-pointer ${
               tornEdge.enabled ? 'bg-white' : 'bg-[#262626]'
@@ -304,13 +304,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div>
                   <div className="flex justify-between text-[11px] mb-1.5">
                     <span className="text-neutral-400 font-medium">Розмір / розмиття тіні</span>
-                    <span className="font-mono text-white font-bold">{tornEdge.shadowBlur ?? 48}px</span>
+                    <span className="font-mono text-white font-bold">{tornEdge.shadowBlur ?? 50}px</span>
                   </div>
                   <input
                     type="range"
                     min="4"
-                    max="48"
-                    value={tornEdge.shadowBlur ?? 48}
+                    max="100"
+                    value={tornEdge.shadowBlur ?? 50}
                     onChange={(e) => onChangeTornEdge({ shadowBlur: Number(e.target.value) })}
                     className="w-full h-1.5 bg-[#262626] rounded appearance-none cursor-pointer accent-white"
                   />

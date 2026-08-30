@@ -28,7 +28,7 @@ export interface TornEdgeSettings {
   dropShadow: boolean;     // display preview shadow
   frequency: number;
   octaves: number;
-  shadowBlur: number;      // default 48
+  shadowBlur: number;      // default 50 (max 100)
   shadowOpacity: number;
 }
 

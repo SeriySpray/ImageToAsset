@@ -342,8 +342,8 @@ export function renderTornPaperAsset(
         clipCtx.globalCompositeOperation = 'destination-in';
         clipCtx.drawImage(maskCanvas, 0, 0);
 
-        if (settings.dropShadow && (settings.shadowBlur ?? 48) > 0) {
-          const blur = settings.shadowBlur ?? 48;
+        if (settings.dropShadow && (settings.shadowBlur ?? 50) > 0) {
+          const blur = settings.shadowBlur ?? 50;
           const opacity = settings.shadowOpacity ?? 0.35;
           const offsetY = Math.max(2, Math.round(blur * 0.35));
           targetCtx.save();
@@ -371,8 +371,8 @@ export function renderTornPaperAsset(
   }
 
   // 2. Render realistic volumetric drop shadow if requested
-  if (settings.dropShadow && (settings.shadowBlur ?? 48) > 0) {
-    const blur = settings.shadowBlur ?? 48;
+  if (settings.dropShadow && (settings.shadowBlur ?? 50) > 0) {
+    const blur = settings.shadowBlur ?? 50;
     const opacity = settings.shadowOpacity ?? 0.35;
     const offsetY = Math.max(2, Math.round(blur * 0.35));
     targetCtx.save();

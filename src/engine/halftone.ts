@@ -195,8 +195,8 @@ export function renderHalftone(
     return;
   }
 
-  // 3. Mode: Classic Photo Halftone Raster or Grayscale Hybrid
-  if (mode === 'dots' || mode === 'hybrid') {
+  // 3. Mode: Classic Photo Halftone Raster
+  if (mode === 'dots') {
     const htPatternCanvas = document.createElement('canvas');
     htPatternCanvas.width = width;
     htPatternCanvas.height = height;
@@ -271,28 +271,7 @@ export function renderHalftone(
     }
 
     htCtx.putImageData(patternImgData, 0, 0);
-
-    if (mode === 'hybrid') {
-      const outCanvas = document.createElement('canvas');
-      outCanvas.width = width;
-      outCanvas.height = height;
-      const outCtx = outCanvas.getContext('2d');
-      if (outCtx) {
-        outCtx.drawImage(grayCanvas, 0, 0);
-        outCtx.save();
-        outCtx.globalCompositeOperation = 'multiply';
-        outCtx.globalAlpha = 0.55;
-        outCtx.drawImage(htPatternCanvas, 0, 0);
-        outCtx.restore();
-
-        outCtx.globalCompositeOperation = 'destination-in';
-        outCtx.drawImage(sourceCtx.canvas, 0, 0);
-
-        targetCtx.drawImage(outCanvas, 0, 0);
-      }
-    } else {
-      targetCtx.drawImage(htPatternCanvas, 0, 0);
-    }
+    targetCtx.drawImage(htPatternCanvas, 0, 0);
 
     const t1 = performance.now();
     console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);

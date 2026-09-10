@@ -44,7 +44,6 @@ export interface Translations {
       dots: string;
       colorHalftone: string;
       graphicDots: string;
-      hybrid: string;
       engraving: string;
     };
     contrast: string;
@@ -125,7 +124,6 @@ export const translations: Record<Language, Translations> = {
         dots: 'Фото-растр',
         colorHalftone: 'Колір + Растр',
         graphicDots: 'Графічний растр',
-        hybrid: 'Фото + Растр',
         engraving: 'Гравюра',
       },
       contrast: 'Контрастність',
@@ -208,7 +206,6 @@ export const translations: Record<Language, Translations> = {
         dots: 'Photo Halftone',
         colorHalftone: 'Color + Halftone',
         graphicDots: 'Graphic Halftone',
-        hybrid: 'Photo + Halftone',
         engraving: 'Engraving',
       },
       contrast: 'Contrast',

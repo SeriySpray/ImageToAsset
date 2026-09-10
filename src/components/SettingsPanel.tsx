@@ -6,7 +6,6 @@ import {
   Activity, 
   Contrast, 
   Eye, 
-  Layers, 
   X,
   Grid,
   Palette,
@@ -61,7 +60,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     { id: 'dots', name: t.modes.dots, icon: <CircleDot className="w-3.5 h-3.5" /> },
     { id: 'color-halftone', name: t.modes.colorHalftone, icon: <Palette className="w-3.5 h-3.5" /> },
     { id: 'graphic-dots', name: t.modes.graphicDots, icon: <Grid className="w-3.5 h-3.5" /> },
-    { id: 'hybrid', name: t.modes.hybrid, icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'engraving', name: t.modes.engraving, icon: <Activity className="w-3.5 h-3.5" /> },
   ];
 
@@ -113,18 +111,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </h2>
           </div>
 
-          {/* Mode Grid */}
+          {/* Mode Grid (2x2) */}
           <div className="grid grid-cols-2 gap-1.5 mb-4 bg-[#121212] p-1.5 rounded border border-[#262626]">
-            {modes.map((m, idx) => {
+            {modes.map((m) => {
               const active = halftone.mode === m.id;
-              const isLastOdd = idx === modes.length - 1 && modes.length % 2 !== 0;
               return (
                 <button
                   key={m.id}
                   onClick={() => onChangeHalftone({ mode: m.id })}
                   className={`flex items-center justify-start gap-1.5 py-1.5 px-2 rounded text-[11px] font-medium transition cursor-pointer ${
-                    isLastOdd ? 'col-span-2 justify-center' : ''
-                  } ${
                     active
                       ? 'bg-white text-black font-semibold'
                       : 'text-neutral-400 hover:text-white hover:bg-[#1c1c1c]'

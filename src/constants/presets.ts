@@ -71,11 +71,11 @@ export const PRESETS: Preset[] = [
     },
   },
   {
-    id: 'retro-engraving',
-    name: 'Ретро-гравюра (Engraving)',
-    description: 'Ефект гравюри з хвилястими штрихами',
+    id: 'paper-halftone-vintage',
+    name: 'Паперовий растр (Paper Halftone)',
+    description: 'Графічний растр із фоном та текстурою паперової підкладки',
     halftone: {
-      mode: 'engraving',
+      mode: 'paper-halftone',
       contrast: 50,
       dotSize: 6,
     },
@@ -84,13 +84,13 @@ export const PRESETS: Preset[] = [
       padding: 20,
       roughness: 3,
       canvasPadding: 0,
-      frequency: 0.06,
+      frequency: 0.07,
       octaves: 3,
-      paperColor: '#fcf8f2',
+      paperColor: '#f6f0db',
       paperTexture: true,
       dropShadow: true,
       shadowBlur: 50,
-      shadowOpacity: 0.25,
+      shadowOpacity: 0.3,
     },
   }
 ];

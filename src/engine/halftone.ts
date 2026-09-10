@@ -42,7 +42,8 @@ export function renderHalftone(
   targetCtx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  settings: HalftoneSettings
+  settings: HalftoneSettings,
+  paperColor?: string
 ): void {
   const t0 = performance.now();
   targetCtx.clearRect(0, 0, width, height);
@@ -369,74 +370,109 @@ export function renderHalftone(
     return;
   }
 
-  // 3. Fast Engraving Line Screen
-  if (mode === 'engraving') {
+  // 4. Mode: Graphic Halftone on Paper Backing (Entire background matches outline color & texture)
+  if (mode === 'paper-halftone') {
     const htPatternCanvas = document.createElement('canvas');
     htPatternCanvas.width = width;
     htPatternCanvas.height = height;
-    const htCtx = htPatternCanvas.getContext('2d');
+    const htCtx = htPatternCanvas.getContext('2d', { willReadFrequently: true });
     if (!htCtx) return;
 
-    htCtx.fillStyle = '#ffffff';
-    htCtx.fillRect(0, 0, width, height);
+    const patternImgData = htCtx.createImageData(width, height);
+    const patternPixels32 = new Uint32Array(patternImgData.data.buffer);
 
-    const inkColor = '#000000';
-    htCtx.strokeStyle = inkColor;
-    htCtx.lineWidth = 1;
-    htCtx.lineCap = 'round';
+    const S = Math.max(2, dotSize);
+    const halfS = S * 0.5;
+    const invS = 1 / S;
+    const maxRadius = halfS * 0.88;
+    const maxR2 = maxRadius * maxRadius;
+    const marginDist = Math.max(2, S * 0.85);
 
-    const gridStep = Math.max(3, dotSize);
-    const diag = Math.sqrt(width * width + height * height);
-    const minX = -diag;
-    const maxX = diag * 2;
-    const minY = -diag;
-    const maxY = diag * 2;
-    const cos = INV_SQRT2;
-    const sin = INV_SQRT2;
+    // Ink color: white ink on dark paper (e.g. graphite #1a1a1a), black ink on light/colored paper
+    const hex = (paperColor || '#ffffff').replace('#', '').trim();
+    const pr = parseInt(hex.substring(0, 2), 16) || 255;
+    const pg = parseInt(hex.substring(2, 4), 16) || 255;
+    const pb = parseInt(hex.substring(4, 6), 16) || 255;
+    const paperLum = (pr * 54 + pg * 183 + pb * 19) >> 8;
+    const isDarkPaper = paperLum < 100;
 
-    for (let gy = minY; gy < maxY; gy += gridStep) {
-      htCtx.beginPath();
-      let isDrawing = false;
+    const inkR = isDarkPaper ? 255 : 0;
+    const inkG = isDarkPaper ? 255 : 0;
+    const inkB = isDarkPaper ? 255 : 0;
+    const inkRgb32 = (inkB << 16) | (inkG << 8) | inkR;
 
-      for (let gx = minX; gx < maxX; gx += 5) {
-        let x = gx * cos - gy * sin;
-        let y = gx * sin + gy * cos;
+    for (let y = 0; y < height; y++) {
+      const rowOffset = y * width;
+      for (let x = 0; x < width; x++) {
+        const i = rowOffset + x;
 
-        const wave = Math.sin(gx * 0.08) * 2.5;
-        x += -sin * wave;
-        y += cos * wave;
-
-        if (x < 0 || x >= width || y < 0 || y >= height) {
-          isDrawing = false;
+        // Keep transparent pixels transparent
+        if (srcPixels[i * 4 + 3] < 5) {
+          patternPixels32[i] = 0x00000000;
           continue;
         }
 
-        const ix = Math.floor(x);
-        const iy = Math.floor(y);
-        const sampleVal = lumBytes[iy * width + ix];
-        const darkness = (255 - sampleVal) / 255;
+        // 45-degree screen coordinates
+        const u = (x + y) * INV_SQRT2;
+        const v = (x - y) * INV_SQRT2;
 
-        if (darkness > 0.15) {
-          const thickness = Math.max(0.6, darkness * gridStep * 0.85);
-          htCtx.lineWidth = thickness;
-          if (!isDrawing) {
-            htCtx.moveTo(x, y);
-            isDrawing = true;
-          } else {
-            htCtx.lineTo(x, y);
-          }
+        const ku = Math.floor(u * invS + 0.5);
+        const kv = Math.floor(v * invS + 0.5);
+        const uc = ku * S;
+        const vc = kv * S;
+
+        const gu = u - uc;
+        const gv = v - vc;
+        const distSq = gu * gu + gv * gv;
+
+        // Far outside maximum dot radius -> transparent paper background
+        if (distSq > maxR2 + marginDist) {
+          patternPixels32[i] = 0x00000000;
+          continue;
+        }
+
+        const xc = (uc + vc) * INV_SQRT2;
+        const yc = (uc - vc) * INV_SQRT2;
+        const ixc = Math.max(0, Math.min(width - 1, (xc + 0.5) | 0));
+        const iyc = Math.max(0, Math.min(height - 1, (yc + 0.5) | 0));
+
+        const centerLum = lumBytes[iyc * width + ixc];
+        const rawDarkness = isDarkPaper ? (centerLum / 255) : ((255 - centerLum) / 255);
+
+        // Near-zero ink density -> transparent paper background
+        if (rawDarkness <= 0.03) {
+          patternPixels32[i] = 0x00000000;
+          continue;
+        }
+
+        const thresholdR2 = rawDarkness * maxR2;
+
+        // Inside solid ink dot
+        if (distSq <= thresholdR2) {
+          patternPixels32[i] = (255 << 24) | inkRgb32;
+          continue;
+        }
+
+        // Outside dot threshold -> transparent paper background
+        if (distSq > thresholdR2 + marginDist) {
+          patternPixels32[i] = 0x00000000;
+          continue;
+        }
+
+        // Smooth antialiasing to transparent paper background
+        const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
+        if (edgeDist < 0.85) {
+          const alpha = Math.round((1 - edgeDist / 0.85) * 255);
+          patternPixels32[i] = (alpha << 24) | inkRgb32;
         } else {
-          isDrawing = false;
+          patternPixels32[i] = 0x00000000;
         }
       }
-      htCtx.stroke();
     }
 
-    // Clip engraving to source transparency
-    htCtx.globalCompositeOperation = 'destination-in';
-    htCtx.drawImage(sourceCtx.canvas, 0, 0);
-
+    htCtx.putImageData(patternImgData, 0, 0);
     targetCtx.drawImage(htPatternCanvas, 0, 0);
+
     const t1 = performance.now();
     console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
   }

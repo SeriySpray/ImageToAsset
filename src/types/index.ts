@@ -10,7 +10,7 @@ export type GraphicMode =
   | 'dots'          // Photo Halftone (Classic Newspaper Dot Matrix for Photos)
   | 'color-halftone'// Color Halftone (Preserves original colors with halftone dot screen)
   | 'graphic-dots'  // Graphic / Line-Art Halftone (Isolated Dots for Solid Blacks & Graphics)
-  | 'engraving';    // Retro engraving hatching
+  | 'paper-halftone'; // Paper Halftone (Background matches outline color & texture)
 
 export interface HalftoneSettings {
   mode: GraphicMode;

@@ -225,9 +225,9 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const hCtx = hCanvas.getContext('2d');
     if (!hCtx) return;
 
-    renderHalftone(srcCtx, hCtx, totalW, totalH, halftone);
+    renderHalftone(srcCtx, hCtx, totalW, totalH, halftone, tornEdge.paperColor);
     compositeRef.current();
-  }, [image, halftone, totalW, totalH]);
+  }, [image, halftone, tornEdge.paperColor, totalW, totalH]);
 
   // Layer 2: Paper Backing Layer (Re-renders on tornEdge settings or mask change)
   useEffect(() => {

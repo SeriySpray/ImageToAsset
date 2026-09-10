@@ -3,7 +3,7 @@ import {
   Sliders, 
   Scissors, 
   CircleDot, 
-  Activity, 
+  Stamp, 
   Contrast, 
   Eye, 
   X,
@@ -60,7 +60,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     { id: 'dots', name: t.modes.dots, icon: <CircleDot className="w-3.5 h-3.5" /> },
     { id: 'color-halftone', name: t.modes.colorHalftone, icon: <Palette className="w-3.5 h-3.5" /> },
     { id: 'graphic-dots', name: t.modes.graphicDots, icon: <Grid className="w-3.5 h-3.5" /> },
-    { id: 'engraving', name: t.modes.engraving, icon: <Activity className="w-3.5 h-3.5" /> },
+    { id: 'paper-halftone', name: t.modes.paperHalftone, icon: <Stamp className="w-3.5 h-3.5" /> },
   ];
 
   const paperColors = [

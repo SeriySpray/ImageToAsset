@@ -89,8 +89,114 @@ export function renderHalftone(
 
   grayCtx.putImageData(grayImgData, 0, 0);
 
-  // 2. Mode: Classic Photo Halftone Raster, Color Halftone, or Grayscale Hybrid
-  if (mode === 'dots' || mode === 'hybrid' || mode === 'color-halftone') {
+  // 2. Mode: True Color Halftone (Full per-pixel color halftone dot rasterization)
+  if (mode === 'color-halftone') {
+    const htPatternCanvas = document.createElement('canvas');
+    htPatternCanvas.width = width;
+    htPatternCanvas.height = height;
+    const htCtx = htPatternCanvas.getContext('2d', { willReadFrequently: true });
+    if (!htCtx) return;
+
+    const patternImgData = htCtx.createImageData(width, height);
+    const patternPixels32 = new Uint32Array(patternImgData.data.buffer);
+
+    const S = Math.max(2, dotSize);
+    const halfS = S * 0.5;
+    const invS = 1 / S;
+    const maxRadius = halfS * 1.05;
+    const maxR2 = maxRadius * maxRadius;
+    const marginDist = Math.max(2, S * 0.85);
+
+    for (let y = 0; y < height; y++) {
+      const rowOffset = y * width;
+      for (let x = 0; x < width; x++) {
+        const i = rowOffset + x;
+
+        // Keep transparent pixels completely transparent
+        if (srcPixels[i * 4 + 3] < 5) {
+          patternPixels32[i] = 0x00000000;
+          continue;
+        }
+
+        // 45-degree screen coordinates
+        const u = (x + y) * INV_SQRT2;
+        const v = (x - y) * INV_SQRT2;
+
+        const ku = Math.floor(u * invS + 0.5);
+        const kv = Math.floor(v * invS + 0.5);
+        const uc = ku * S;
+        const vc = kv * S;
+
+        const gu = u - uc;
+        const gv = v - vc;
+        const distSq = gu * gu + gv * gv;
+
+        // Inverse transform to find dot center on image coordinates
+        const xc = (uc + vc) * INV_SQRT2;
+        const yc = (uc - vc) * INV_SQRT2;
+        const ixc = Math.max(0, Math.min(width - 1, (xc + 0.5) | 0));
+        const iyc = Math.max(0, Math.min(height - 1, (yc + 0.5) | 0));
+
+        // Sample color from dot center, falling back to pixel if center is transparent
+        const centerIdx = srcPixels[(iyc * width + ixc) * 4 + 3] >= 5 
+          ? (iyc * width + ixc) * 4 
+          : i * 4;
+
+        const cr = lut[srcPixels[centerIdx]];
+        const cg = lut[srcPixels[centerIdx + 1]];
+        const cb = lut[srcPixels[centerIdx + 2]];
+
+        // Calculate darkness from luminance & subtractive ink density
+        const lum = (cr * 54 + cg * 183 + cb * 19) >> 8;
+        const lumDark = (255 - lum) / 255;
+        const minC = Math.min(cr, cg, cb);
+        const inkDensity = (255 - minC) / 255;
+        const darkness = Math.max(lumDark, inkDensity * 0.85);
+
+        // Pure white background for near-zero darkness
+        if (darkness <= 0.02) {
+          patternPixels32[i] = 0xFFFFFFFF;
+          continue;
+        }
+
+        const thresholdR2 = Math.max(0.04, darkness) * maxR2;
+
+        // Inside the colored ink dot
+        if (distSq <= thresholdR2) {
+          patternPixels32[i] = 0xFF000000 | (cb << 16) | (cg << 8) | cr;
+          continue;
+        }
+
+        // Fast path: Far outside dot radius
+        if (distSq > thresholdR2 + marginDist) {
+          patternPixels32[i] = 0xFFFFFFFF;
+          continue;
+        }
+
+        // Smooth antialiased blend to white paper boundary
+        const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
+        if (edgeDist < 0.85) {
+          const t = edgeDist / 0.85;
+          const blendR = Math.round(cr * (1 - t) + 255 * t);
+          const blendG = Math.round(cg * (1 - t) + 255 * t);
+          const blendB = Math.round(cb * (1 - t) + 255 * t);
+          patternPixels32[i] = 0xFF000000 | (blendB << 16) | (blendG << 8) | blendR;
+        } else {
+          patternPixels32[i] = 0xFFFFFFFF;
+        }
+      }
+    }
+
+    htCtx.putImageData(patternImgData, 0, 0);
+    targetCtx.drawImage(htPatternCanvas, 0, 0);
+
+    const t1 = performance.now();
+    console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
+    return;
+  }
+
+  // 3. Mode: Classic Photo Halftone Raster or Grayscale Hybrid
+  if (mode === 'dots' || mode === 'hybrid') {
     const htPatternCanvas = document.createElement('canvas');
     htPatternCanvas.width = width;
     htPatternCanvas.height = height;
@@ -166,48 +272,7 @@ export function renderHalftone(
 
     htCtx.putImageData(patternImgData, 0, 0);
 
-    if (mode === 'color-halftone') {
-      const colorCanvas = document.createElement('canvas');
-      colorCanvas.width = width;
-      colorCanvas.height = height;
-      const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
-      if (colorCtx) {
-        const colorImgData = colorCtx.createImageData(width, height);
-        const colorPixels32 = new Uint32Array(colorImgData.data.buffer);
-
-        for (let i = 0; i < width * height; i++) {
-          const idx = i * 4;
-          const a = srcPixels[idx + 3];
-          if (a < 5) {
-            colorPixels32[i] = 0x00000000;
-            continue;
-          }
-          const r = lut[srcPixels[idx]];
-          const g = lut[srcPixels[idx + 1]];
-          const b = lut[srcPixels[idx + 2]];
-          colorPixels32[i] = (a << 24) | (b << 16) | (g << 8) | r;
-        }
-        colorCtx.putImageData(colorImgData, 0, 0);
-
-        const outCanvas = document.createElement('canvas');
-        outCanvas.width = width;
-        outCanvas.height = height;
-        const outCtx = outCanvas.getContext('2d');
-        if (outCtx) {
-          outCtx.drawImage(colorCanvas, 0, 0);
-          outCtx.save();
-          outCtx.globalCompositeOperation = 'multiply';
-          outCtx.globalAlpha = 0.72;
-          outCtx.drawImage(htPatternCanvas, 0, 0);
-          outCtx.restore();
-
-          outCtx.globalCompositeOperation = 'destination-in';
-          outCtx.drawImage(sourceCtx.canvas, 0, 0);
-
-          targetCtx.drawImage(outCanvas, 0, 0);
-        }
-      }
-    } else if (mode === 'hybrid') {
+    if (mode === 'hybrid') {
       const outCanvas = document.createElement('canvas');
       outCanvas.width = width;
       outCanvas.height = height;

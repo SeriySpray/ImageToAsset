@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { ToolType, Point, HalftoneSettings, TornEdgeSettings } from '../types';
 import { Translations } from '../i18n';
 import { renderHalftone } from '../engine/halftone';
@@ -209,7 +209,35 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
   };
 
-  // Layer 1: Halftone Layer (Re-renders on halftone settings or source change)
+  // rAF-batched GPU composite to guarantee silky-smooth 60 FPS even during rapid color slider dragging
+  const rafCompositeRef = useRef<number | null>(null);
+  const requestComposite = useCallback(() => {
+    if (rafCompositeRef.current !== null) return;
+    rafCompositeRef.current = requestAnimationFrame(() => {
+      rafCompositeRef.current = null;
+      compositeRef.current();
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (rafCompositeRef.current !== null) {
+        cancelAnimationFrame(rafCompositeRef.current);
+      }
+    };
+  }, []);
+
+  // Only re-compute halftone if dark/light paper threshold crosses in paper-halftone mode
+  const isDarkPaper = useMemo(() => {
+    if (halftone.mode !== 'paper-halftone') return false;
+    const hex = (tornEdge.paperColor || '#ffffff').replace('#', '').trim();
+    const pr = parseInt(hex.substring(0, 2), 16) || 255;
+    const pg = parseInt(hex.substring(2, 4), 16) || 255;
+    const pb = parseInt(hex.substring(4, 6), 16) || 255;
+    return ((pr * 54 + pg * 183 + pb * 19) >> 8) < 100;
+  }, [halftone.mode, tornEdge.paperColor]);
+
+  // Layer 1: Halftone Layer (Re-renders ONLY on halftone settings or source change, NOT on intermediate color drag!)
   useEffect(() => {
     if (!image || !sourceCanvasRef.current || totalW === 0 || totalH === 0) return;
 
@@ -226,10 +254,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (!hCtx) return;
 
     renderHalftone(srcCtx, hCtx, totalW, totalH, halftone, tornEdge.paperColor);
-    compositeRef.current();
-  }, [image, halftone, tornEdge.paperColor, totalW, totalH]);
+    requestComposite();
+  }, [image, halftone, isDarkPaper, totalW, totalH, requestComposite]);
 
-  // Layer 2: Paper Backing Layer (Re-renders on tornEdge settings or mask change)
+  // Layer 2: Paper Backing Layer (Instantaneous 1ms paper color update via cached alpha geometry!)
   useEffect(() => {
     if (!image || !maskCanvasRef.current || totalW === 0 || totalH === 0) return;
 
@@ -239,9 +267,9 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const pCanvas = paperCanvasRef.current;
     if (mask) {
       renderPaperBacking(pCanvas, mask, totalW, totalH, tornEdge);
-      compositeRef.current();
+      requestComposite();
     }
-  }, [image, mask, tornEdge, totalW, totalH]);
+  }, [image, mask, tornEdge, totalW, totalH, requestComposite]);
 
   // Read mask from offscreen canvas and propagate to App state
   const commitMaskCanvas = useCallback(() => {

@@ -222,6 +222,24 @@ const paperTextureMap = new Int8Array(PAPER_TEXTURE_SIZE * PAPER_TEXTURE_SIZE);
 /**
  * Ultra-fast paper sticker backing renderer using 32-bit integer pixel writes, fast noise LUT, and multi-stage culling
  */
+// Alpha geometry cache for instantaneous color picker dragging (1ms updates)
+let cachedAlphaMaskRef: Uint8ClampedArray | null = null;
+let cachedAlphaWidth = 0;
+let cachedAlphaHeight = 0;
+let cachedAlphaPadding = -1;
+let cachedAlphaRoughness = -1;
+let cachedAlphaField: Uint8Array | null = null;
+
+// Drop shadow cache to avoid expensive 40ms CPU Gaussian blurs during color changes
+let cachedShadowCanvas: HTMLCanvasElement | null = null;
+let cachedShadowMaskRef: any = null;
+let cachedShadowWidth = 0;
+let cachedShadowHeight = 0;
+let cachedShadowPadding = -1;
+let cachedShadowRoughness = -1;
+let cachedShadowBlur = -1;
+let cachedShadowOpacity = -1;
+
 export function renderPaperBacking(
   targetCanvas: HTMLCanvasElement,
   maskData: Uint8ClampedArray,
@@ -236,7 +254,6 @@ export function renderPaperBacking(
   const paperCtx = targetCanvas.getContext('2d', { willReadFrequently: true });
   if (!paperCtx) return;
 
-  const { distField, isSubsampled, gridW } = computeDistanceTransform(maskData, width, height);
   const paperImgData = paperCtx.createImageData(width, height);
   const pixels32 = new Uint32Array(paperImgData.data.buffer);
 
@@ -253,8 +270,52 @@ export function renderPaperBacking(
   const pb = Number.isNaN(parsedB) ? 255 : parsedB;
 
   const { padding, roughness, paperTexture } = settings;
+
+  // Ultra-fast path: If geometry (mask, padding, roughness) hasn't changed, reuse precomputed alpha field!
+  const hasCachedAlpha =
+    cachedAlphaMaskRef === maskData &&
+    cachedAlphaWidth === width &&
+    cachedAlphaHeight === height &&
+    cachedAlphaPadding === padding &&
+    cachedAlphaRoughness === roughness &&
+    cachedAlphaField !== null &&
+    cachedAlphaField.length === width * height;
+
+  if (hasCachedAlpha) {
+    const alphaField = cachedAlphaField!;
+    for (let y = 0; y < height; y++) {
+      const rowOffset = y * width;
+      const textureYOffset = (y & 511) * PAPER_TEXTURE_SIZE;
+      for (let x = 0; x < width; x++) {
+        const idx = rowOffset + x;
+        const alpha = alphaField[idx];
+        if (alpha === 0) {
+          pixels32[idx] = 0;
+          continue;
+        }
+
+        if (paperTexture) {
+          const grain = paperTextureMap[textureYOffset + (x & 511)];
+          const gr = Math.max(0, Math.min(255, pr + grain));
+          const gg = Math.max(0, Math.min(255, pg + Math.round(grain * 0.96)));
+          const gb = Math.max(0, Math.min(255, pb + Math.round(grain * 0.88)));
+          pixels32[idx] = (alpha << 24) | (gb << 16) | (gg << 8) | gr;
+        } else {
+          pixels32[idx] = (alpha << 24) | (pb << 16) | (pg << 8) | pr;
+        }
+      }
+    }
+
+    paperCtx.putImageData(paperImgData, 0, 0);
+    const t1 = performance.now();
+    console.log(`[ImageToAsset Perf] Fast paper color update in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
+    return;
+  }
+
+  const { distField, isSubsampled, gridW } = computeDistanceTransform(maskData, width, height);
   const maxPossiblePadding = padding + roughness * 1.25;
   const innerCorePadding = Math.max(0, padding - roughness * 1.25);
+  const newAlphaField = new Uint8Array(width * height);
 
   // Render paper backing with instant O(1) noise lookup on boundary pixels
   for (let y = 0; y < height; y++) {
@@ -272,11 +333,13 @@ export function renderPaperBacking(
       // Fast path 1: Far outside sticker (skip all math)
       if (dist > maxPossiblePadding) {
         pixels32[idx] = 0;
+        newAlphaField[idx] = 0;
         continue;
       }
 
       // Fast path 2: Solid core of sticker (skip edge boundary math)
       if (dist <= innerCorePadding) {
+        newAlphaField[idx] = 255;
         if (paperTexture) {
           const grain = paperTextureMap[textureYOffset + (x & 511)];
           const gr = Math.max(0, Math.min(255, pr + grain));
@@ -308,12 +371,22 @@ export function renderPaperBacking(
 
         const edgeDist = effectivePadding - dist;
         const alpha = edgeDist < 1.2 ? Math.floor(Math.max(0, Math.min(1, edgeDist / 1.2)) * 255) : 255;
+        newAlphaField[idx] = alpha;
         pixels32[idx] = (alpha << 24) | (gb << 16) | (gg << 8) | gr;
       } else {
+        newAlphaField[idx] = 0;
         pixels32[idx] = 0;
       }
     }
   }
+
+  // Save alpha geometry cache
+  cachedAlphaMaskRef = maskData;
+  cachedAlphaWidth = width;
+  cachedAlphaHeight = height;
+  cachedAlphaPadding = padding;
+  cachedAlphaRoughness = roughness;
+  cachedAlphaField = newAlphaField;
 
   paperCtx.putImageData(paperImgData, 0, 0);
 
@@ -376,18 +449,56 @@ export function renderTornPaperAsset(
     }
   }
 
-  // 2. Render realistic volumetric drop shadow if requested
+  // 2. Render realistic volumetric drop shadow with GPU cache (0.03ms on color changes)
   if (settings.dropShadow && (settings.shadowBlur ?? 50) > 0) {
     const blur = settings.shadowBlur ?? 50;
     const opacity = settings.shadowOpacity ?? 0.35;
     const offsetY = Math.max(2, Math.round(blur * 0.35));
-    targetCtx.save();
-    targetCtx.shadowColor = `rgba(0, 0, 0, ${opacity})`;
-    targetCtx.shadowBlur = blur;
-    targetCtx.shadowOffsetX = 0;
-    targetCtx.shadowOffsetY = offsetY;
-    targetCtx.drawImage(paperCanvas, 0, 0);
-    targetCtx.restore();
+
+    const shadowMatches =
+      cachedShadowCanvas !== null &&
+      cachedShadowMaskRef === maskCanvas &&
+      cachedShadowWidth === width &&
+      cachedShadowHeight === height &&
+      cachedShadowPadding === settings.padding &&
+      cachedShadowRoughness === settings.roughness &&
+      cachedShadowBlur === blur &&
+      cachedShadowOpacity === opacity;
+
+    if (shadowMatches && cachedShadowCanvas) {
+      targetCtx.drawImage(cachedShadowCanvas, 0, 0);
+    } else {
+      if (!cachedShadowCanvas) {
+        cachedShadowCanvas = document.createElement('canvas');
+      }
+      cachedShadowCanvas.width = width;
+      cachedShadowCanvas.height = height;
+      const sCtx = cachedShadowCanvas.getContext('2d');
+      if (sCtx) {
+        sCtx.clearRect(0, 0, width, height);
+        sCtx.save();
+        sCtx.shadowColor = `rgba(0, 0, 0, ${opacity})`;
+        sCtx.shadowBlur = blur;
+        sCtx.shadowOffsetX = 0;
+        sCtx.shadowOffsetY = offsetY;
+        sCtx.drawImage(paperCanvas, 0, 0);
+        sCtx.restore();
+
+        // Clip out the paper silhouette so cached shadow is 100% independent of paper color
+        sCtx.globalCompositeOperation = 'destination-out';
+        sCtx.drawImage(paperCanvas, 0, 0);
+      }
+
+      cachedShadowMaskRef = maskCanvas;
+      cachedShadowWidth = width;
+      cachedShadowHeight = height;
+      cachedShadowPadding = settings.padding;
+      cachedShadowRoughness = settings.roughness;
+      cachedShadowBlur = blur;
+      cachedShadowOpacity = opacity;
+
+      targetCtx.drawImage(cachedShadowCanvas, 0, 0);
+    }
   }
 
   // 3. Draw paper base

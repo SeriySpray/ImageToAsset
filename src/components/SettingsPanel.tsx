@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
 import { 
   Sliders, 
   Scissors, 
@@ -53,6 +53,25 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   t,
 }) => {
   const colorInputRef = useRef<HTMLInputElement>(null);
+  const rafColorRef = useRef<number | null>(null);
+
+  const handleColorInput = useCallback((newColor: string) => {
+    if (rafColorRef.current !== null) {
+      cancelAnimationFrame(rafColorRef.current);
+    }
+    rafColorRef.current = requestAnimationFrame(() => {
+      onChangeTornEdge({ paperColor: newColor });
+      rafColorRef.current = null;
+    });
+  }, [onChangeTornEdge]);
+
+  useEffect(() => {
+    return () => {
+      if (rafColorRef.current !== null) {
+        cancelAnimationFrame(rafColorRef.current);
+      }
+    };
+  }, []);
 
   if (!hasImage) return null;
 
@@ -290,7 +309,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       ref={colorInputRef}
                       type="color"
                       value={ensureHex6(tornEdge.paperColor)}
-                      onChange={(e) => onChangeTornEdge({ paperColor: e.target.value })}
+                      onInput={(e) => handleColorInput((e.target as HTMLInputElement).value)}
+                      onChange={(e) => {
+                        if (rafColorRef.current !== null) {
+                          cancelAnimationFrame(rafColorRef.current);
+                          rafColorRef.current = null;
+                        }
+                        onChangeTornEdge({ paperColor: e.target.value });
+                      }}
                       className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                     />
                     <div className="w-2.5 h-2.5 rounded-full border border-black/40 bg-white/30 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />

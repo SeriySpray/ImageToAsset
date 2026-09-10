@@ -73,11 +73,11 @@ export const PRESETS: Preset[] = [
   {
     id: 'paper-halftone-vintage',
     name: 'Паперовий растр (Paper Halftone)',
-    description: 'Графічний растр із фоном та текстурою паперової підкладки',
+    description: 'Газетний фото-растр із фоном та текстурою паперової підкладки',
     halftone: {
       mode: 'paper-halftone',
-      contrast: 50,
-      dotSize: 6,
+      contrast: 45,
+      dotSize: 6.5,
     },
     tornEdge: {
       enabled: true,

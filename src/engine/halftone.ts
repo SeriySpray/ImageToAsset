@@ -370,7 +370,7 @@ export function renderHalftone(
     return;
   }
 
-  // 4. Mode: Graphic Halftone on Paper Backing (Entire background matches outline color & texture)
+  // 4. Mode: Photo Halftone on Paper Backing (Continuous Photo Halftone on Paper Backing with Matching Color & Texture)
   if (mode === 'paper-halftone') {
     const htPatternCanvas = document.createElement('canvas');
     htPatternCanvas.width = width;
@@ -383,10 +383,8 @@ export function renderHalftone(
 
     const S = Math.max(2, dotSize);
     const halfS = S * 0.5;
-    const invS = 1 / S;
-    const maxRadius = halfS * 0.88;
-    const maxR2 = maxRadius * maxRadius;
-    const marginDist = Math.max(2, S * 0.85);
+    const maxR2 = (S * S * 0.5) * 1.08;
+    const marginDist = S * 2;
 
     // Ink color: white ink on dark paper (e.g. graphite #1a1a1a), black ink on light/colored paper
     const hex = (paperColor || '#ffffff').replace('#', '').trim();
@@ -406,9 +404,24 @@ export function renderHalftone(
       for (let x = 0; x < width; x++) {
         const i = rowOffset + x;
 
-        // Keep transparent pixels transparent
+        // Keep transparent pixels transparent without creating dots or background
         if (srcPixels[i * 4 + 3] < 5) {
           patternPixels32[i] = 0x00000000;
+          continue;
+        }
+
+        const sampleVal = lumBytes[i];
+        const darkness = isDarkPaper ? (sampleVal / 255) : ((255 - sampleVal) / 255);
+
+        // Pure paper background (transparent to show paper color & texture)
+        if (darkness <= 0.03) {
+          patternPixels32[i] = 0x00000000;
+          continue;
+        }
+
+        // Pure solid ink (complete coverage)
+        if (darkness >= 0.95) {
+          patternPixels32[i] = (255 << 24) | inkRgb32;
           continue;
         }
 
@@ -416,53 +429,27 @@ export function renderHalftone(
         const u = (x + y) * INV_SQRT2;
         const v = (x - y) * INV_SQRT2;
 
-        const ku = Math.floor(u * invS + 0.5);
-        const kv = Math.floor(v * invS + 0.5);
-        const uc = ku * S;
-        const vc = kv * S;
+        let gu = (u % S + S) % S - halfS;
+        let gv = (v % S + S) % S - halfS;
 
-        const gu = u - uc;
-        const gv = v - vc;
         const distSq = gu * gu + gv * gv;
+        const thresholdR2 = darkness * maxR2;
 
-        // Far outside maximum dot radius -> transparent paper background
-        if (distSq > maxR2 + marginDist) {
-          patternPixels32[i] = 0x00000000;
-          continue;
-        }
-
-        const xc = (uc + vc) * INV_SQRT2;
-        const yc = (uc - vc) * INV_SQRT2;
-        const ixc = Math.max(0, Math.min(width - 1, (xc + 0.5) | 0));
-        const iyc = Math.max(0, Math.min(height - 1, (yc + 0.5) | 0));
-
-        const centerLum = lumBytes[iyc * width + ixc];
-        const rawDarkness = isDarkPaper ? (centerLum / 255) : ((255 - centerLum) / 255);
-
-        // Near-zero ink density -> transparent paper background
-        if (rawDarkness <= 0.03) {
-          patternPixels32[i] = 0x00000000;
-          continue;
-        }
-
-        const thresholdR2 = rawDarkness * maxR2;
-
-        // Inside solid ink dot
         if (distSq <= thresholdR2) {
-          patternPixels32[i] = (255 << 24) | inkRgb32;
+          patternPixels32[i] = (255 << 24) | inkRgb32; // Solid ink dot
           continue;
         }
 
-        // Outside dot threshold -> transparent paper background
+        // Fast path: Far outside dot radius (skip sqrt)
         if (distSq > thresholdR2 + marginDist) {
-          patternPixels32[i] = 0x00000000;
+          patternPixels32[i] = 0x00000000; // Transparent paper background
           continue;
         }
 
-        // Smooth antialiasing to transparent paper background
+        // Only evaluate sqrt on the narrow 1-pixel boundary for silky-smooth antialiasing to paper
         const edgeDist = Math.sqrt(distSq) - Math.sqrt(thresholdR2);
-        if (edgeDist < 0.85) {
-          const alpha = Math.round((1 - edgeDist / 0.85) * 255);
+        if (edgeDist < 0.9) {
+          const alpha = Math.round(Math.max(0, Math.min(1, 1 - edgeDist / 0.9)) * 255);
           patternPixels32[i] = (alpha << 24) | inkRgb32;
         } else {
           patternPixels32[i] = 0x00000000;

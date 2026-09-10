@@ -240,11 +240,17 @@ export function renderPaperBacking(
   const paperImgData = paperCtx.createImageData(width, height);
   const pixels32 = new Uint32Array(paperImgData.data.buffer);
 
-  // Parse paper background color into RGB
-  const hex = settings.paperColor.replace('#', '');
-  const pr = parseInt(hex.substring(0, 2), 16) || 255;
-  const pg = parseInt(hex.substring(2, 4), 16) || 255;
-  const pb = parseInt(hex.substring(4, 6), 16) || 255;
+  // Parse paper background color into RGB safely supporting any 3- or 6-digit hex
+  let hex = (settings.paperColor || '#ffffff').replace('#', '').trim();
+  if (hex.length === 3) {
+    hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+  }
+  const parsedR = parseInt(hex.substring(0, 2), 16);
+  const parsedG = parseInt(hex.substring(2, 4), 16);
+  const parsedB = parseInt(hex.substring(4, 6), 16);
+  const pr = Number.isNaN(parsedR) ? 255 : parsedR;
+  const pg = Number.isNaN(parsedG) ? 255 : parsedG;
+  const pb = Number.isNaN(parsedB) ? 255 : parsedB;
 
   const { padding, roughness, paperTexture } = settings;
   const maxPossiblePadding = padding + roughness * 1.25;

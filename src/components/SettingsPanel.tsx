@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { 
   Sliders, 
   Scissors, 
@@ -9,7 +9,8 @@ import {
   Layers, 
   X,
   Grid,
-  Palette
+  Palette,
+  Pipette
 } from 'lucide-react';
 import { HalftoneSettings, TornEdgeSettings, GraphicMode } from '../types';
 import { Translations } from '../i18n';
@@ -28,6 +29,17 @@ interface SettingsPanelProps {
   t: Translations['settings'];
 }
 
+function ensureHex6(hex: string): string {
+  let h = (hex || '').replace('#', '').trim();
+  if (h.length === 3) {
+    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  }
+  if (h.length === 6 && /^[0-9a-fA-F]{6}$/.test(h)) {
+    return `#${h.toLowerCase()}`;
+  }
+  return '#ffffff';
+}
+
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   halftone,
   onChangeHalftone,
@@ -41,6 +53,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose,
   t,
 }) => {
+  const colorInputRef = useRef<HTMLInputElement>(null);
+
   if (!hasImage) return null;
 
   const modes: { id: GraphicMode; name: string; icon: React.ReactNode }[] = [
@@ -228,25 +242,106 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 />
               </div>
 
-              {/* Paper Color */}
+              {/* Paper / Outline Color with Stylized Color Picker */}
               <div>
-                <label className="text-[10px] font-medium text-neutral-400 mb-1.5 block uppercase tracking-wider">
-                  {t.paperColor}
-                </label>
-                <div className="grid grid-cols-5 gap-1.5">
-                  {paperColors.map((c) => (
-                    <button
-                      key={c.value}
-                      onClick={() => onChangeTornEdge({ paperColor: c.value })}
-                      className={`h-6 rounded border flex items-center justify-center transition cursor-pointer ${
-                        tornEdge.paperColor.toLowerCase() === c.value.toLowerCase()
-                          ? 'border-white ring-1 ring-white'
-                          : 'border-[#262626] hover:border-[#555555]'
-                      }`}
-                      style={{ backgroundColor: c.value }}
-                      title={c.name}
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-[10px] font-medium text-neutral-400 block uppercase tracking-wider">
+                    {t.paperColor}
+                  </label>
+                  <span className="font-mono text-[10px] text-neutral-400 font-semibold">
+                    {tornEdge.paperColor.toUpperCase()}
+                  </span>
+                </div>
+
+                {/* Quick Presets Swatches */}
+                <div className="grid grid-cols-5 gap-1.5 mb-2">
+                  {paperColors.map((c) => {
+                    const isSelected = tornEdge.paperColor.toLowerCase() === c.value.toLowerCase();
+                    return (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => onChangeTornEdge({ paperColor: c.value })}
+                        className={`h-6 rounded border flex items-center justify-center transition cursor-pointer relative ${
+                          isSelected
+                            ? 'border-white ring-1 ring-white'
+                            : 'border-[#262626] hover:border-[#555555]'
+                        }`}
+                        style={{ backgroundColor: c.value }}
+                        title={c.name}
+                      >
+                        {isSelected && (
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{
+                              backgroundColor: c.value === '#ffffff' || c.value === '#f6f0db' || c.value === '#eee6d3' ? '#000000' : '#ffffff'
+                            }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Stylized Custom Color Picker & Hex Input */}
+                <div className="flex items-center gap-1.5 bg-[#121212] p-1.5 rounded border border-[#262626] hover:border-[#333333] transition">
+                  {/* Swatch with embedded native color input */}
+                  <label 
+                    className="relative w-7 h-7 rounded border border-[#333333] cursor-pointer overflow-hidden flex items-center justify-center shrink-0 shadow-inner group"
+                    style={{ backgroundColor: tornEdge.paperColor }}
+                    title={t.pickColorTooltip}
+                  >
+                    <input
+                      ref={colorInputRef}
+                      type="color"
+                      value={ensureHex6(tornEdge.paperColor)}
+                      onChange={(e) => onChangeTornEdge({ paperColor: e.target.value })}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                     />
-                  ))}
+                    <div className="w-2.5 h-2.5 rounded-full border border-black/40 bg-white/30 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                  </label>
+
+                  {/* Hex Text Field */}
+                  <div className="flex-1 flex items-center bg-[#1a1a1a] rounded px-2 py-1 border border-transparent focus-within:border-neutral-500 transition">
+                    <span className="text-neutral-500 font-mono text-[11px] select-none mr-1">#</span>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={tornEdge.paperColor.replace('#', '')}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9a-fA-F]/g, '');
+                        if (val.length <= 6) {
+                          onChangeTornEdge({ paperColor: `#${val}` });
+                        }
+                      }}
+                      placeholder="FFFFFF"
+                      className="w-full bg-transparent text-white font-mono text-[11px] uppercase tracking-wider focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Eyedropper / Pipette Button */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (typeof window !== 'undefined' && 'EyeDropper' in window) {
+                        try {
+                          const eyeDropper = new (window as any).EyeDropper();
+                          const result = await eyeDropper.open();
+                          if (result?.sRGBHex) {
+                            onChangeTornEdge({ paperColor: result.sRGBHex });
+                          }
+                        } catch {
+                          // User canceled eyedropper
+                        }
+                      } else {
+                        colorInputRef.current?.click();
+                      }
+                    }}
+                    title={t.pickColorTooltip}
+                    className="p-1.5 rounded text-neutral-400 hover:text-white hover:bg-[#222222] transition cursor-pointer shrink-0"
+                  >
+                    <Pipette className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
 

@@ -54,6 +54,8 @@ export interface Translations {
     paperColors: {
       [key: string]: string;
     };
+    customColor: string;
+    pickColorTooltip: string;
     outerPaddingTitle: string;
     outerPaddingDesc: string;
     outerPaddingTooltip: string;
@@ -135,6 +137,8 @@ export const translations: Record<Language, Translations> = {
         '#d8d8d8': 'Нейтральний сірий',
         '#1a1a1a': 'Темний графіт',
       },
+      customColor: 'Довільний колір',
+      pickColorTooltip: 'Обрати будь-який колір або скористатися піпеткою',
       outerPaddingTitle: 'Зовнішні поля (60px)',
       outerPaddingDesc: 'Обводка по краях прямокутника',
       outerPaddingTooltip: 'Увімкнути/вимкнути буферні поля 60px для створення зовнішньої обводки прямокутного зображення',
@@ -214,6 +218,8 @@ export const translations: Record<Language, Translations> = {
         '#d8d8d8': 'Neutral Gray',
         '#1a1a1a': 'Dark Graphite',
       },
+      customColor: 'Custom Color',
+      pickColorTooltip: 'Pick any color or use eyedropper',
       outerPaddingTitle: 'Outer Padding (60px)',
       outerPaddingDesc: 'Border around image rectangle',
       outerPaddingTooltip: 'Toggle 60px buffer margin to allow outer borders on rectangular images',

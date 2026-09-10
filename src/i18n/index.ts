@@ -40,6 +40,7 @@ export interface Translations {
     styleAndTone: string;
     modes: {
       dots: string;
+      colorHalftone: string;
       graphicDots: string;
       hybrid: string;
       engraving: string;
@@ -116,6 +117,7 @@ export const translations: Record<Language, Translations> = {
       styleAndTone: 'Стиль та тональність',
       modes: {
         dots: 'Фото-растр',
+        colorHalftone: 'Колір + Растр',
         graphicDots: 'Графічний растр',
         hybrid: 'Фото + Растр',
         engraving: 'Гравюра',
@@ -194,6 +196,7 @@ export const translations: Record<Language, Translations> = {
       styleAndTone: 'Style & Tone',
       modes: {
         dots: 'Photo Halftone',
+        colorHalftone: 'Color + Halftone',
         graphicDots: 'Graphic Halftone',
         hybrid: 'Photo + Halftone',
         engraving: 'Engraving',

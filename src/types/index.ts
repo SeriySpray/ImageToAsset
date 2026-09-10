@@ -8,6 +8,7 @@ export type ToolType =
 
 export type GraphicMode = 
   | 'dots'          // Photo Halftone (Classic Newspaper Dot Matrix for Photos)
+  | 'color-halftone'// Color Halftone (Preserves original colors with halftone dot screen)
   | 'graphic-dots'  // Graphic / Line-Art Halftone (Isolated Dots for Solid Blacks & Graphics)
   | 'hybrid'        // Grayscale + Halftone dots overlay
   | 'engraving';    // Retro engraving hatching

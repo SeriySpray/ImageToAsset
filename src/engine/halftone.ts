@@ -89,8 +89,8 @@ export function renderHalftone(
 
   grayCtx.putImageData(grayImgData, 0, 0);
 
-  // 2. Mode: Classic Photo Halftone Raster (Original Newspaper Screen for Photos)
-  if (mode === 'dots' || mode === 'hybrid') {
+  // 2. Mode: Classic Photo Halftone Raster, Color Halftone, or Grayscale Hybrid
+  if (mode === 'dots' || mode === 'hybrid' || mode === 'color-halftone') {
     const htPatternCanvas = document.createElement('canvas');
     htPatternCanvas.width = width;
     htPatternCanvas.height = height;
@@ -166,7 +166,48 @@ export function renderHalftone(
 
     htCtx.putImageData(patternImgData, 0, 0);
 
-    if (mode === 'hybrid') {
+    if (mode === 'color-halftone') {
+      const colorCanvas = document.createElement('canvas');
+      colorCanvas.width = width;
+      colorCanvas.height = height;
+      const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
+      if (colorCtx) {
+        const colorImgData = colorCtx.createImageData(width, height);
+        const colorPixels32 = new Uint32Array(colorImgData.data.buffer);
+
+        for (let i = 0; i < width * height; i++) {
+          const idx = i * 4;
+          const a = srcPixels[idx + 3];
+          if (a < 5) {
+            colorPixels32[i] = 0x00000000;
+            continue;
+          }
+          const r = lut[srcPixels[idx]];
+          const g = lut[srcPixels[idx + 1]];
+          const b = lut[srcPixels[idx + 2]];
+          colorPixels32[i] = (a << 24) | (b << 16) | (g << 8) | r;
+        }
+        colorCtx.putImageData(colorImgData, 0, 0);
+
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = width;
+        outCanvas.height = height;
+        const outCtx = outCanvas.getContext('2d');
+        if (outCtx) {
+          outCtx.drawImage(colorCanvas, 0, 0);
+          outCtx.save();
+          outCtx.globalCompositeOperation = 'multiply';
+          outCtx.globalAlpha = 0.72;
+          outCtx.drawImage(htPatternCanvas, 0, 0);
+          outCtx.restore();
+
+          outCtx.globalCompositeOperation = 'destination-in';
+          outCtx.drawImage(sourceCtx.canvas, 0, 0);
+
+          targetCtx.drawImage(outCanvas, 0, 0);
+        }
+      }
+    } else if (mode === 'hybrid') {
       const outCanvas = document.createElement('canvas');
       outCanvas.width = width;
       outCanvas.height = height;
@@ -178,6 +219,10 @@ export function renderHalftone(
         outCtx.globalAlpha = 0.55;
         outCtx.drawImage(htPatternCanvas, 0, 0);
         outCtx.restore();
+
+        outCtx.globalCompositeOperation = 'destination-in';
+        outCtx.drawImage(sourceCtx.canvas, 0, 0);
+
         targetCtx.drawImage(outCanvas, 0, 0);
       }
     } else {

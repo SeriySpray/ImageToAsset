@@ -10,7 +10,7 @@ import { Header } from './components/Header';
 import { ToolBar } from './components/ToolBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { CanvasViewport } from './components/CanvasViewport';
-import { createEmptyMask } from './engine/segmentation';
+import { createEmptyMask, removeSmallMaskNoise, smoothMaskContours } from './engine/segmentation';
 import { Language, translations, getStoredLanguage, setStoredLanguage } from './i18n';
 
 const MAX_WORKING_DIM = 1400;
@@ -383,6 +383,14 @@ export const App: React.FC = () => {
     handleUpdateMask(initializePaddedMask(image, rawW, rawH, pad));
   };
 
+  const handleSmoothMask = () => {
+    if (!mask || totalW === 0 || totalH === 0) return;
+    const cleaned = new Uint8ClampedArray(mask);
+    removeSmallMaskNoise(cleaned, totalW, totalH, 0, totalW - 1, 0, totalH - 1, 80, 80);
+    smoothMaskContours(cleaned, totalW, totalH, 0, totalW - 1, 0, totalH - 1, 2.5);
+    handleUpdateMask(cleaned);
+  };
+
   // Direct Transparent PNG Export Engine (Sticker + Border + Shadow without background)
   const handleDownload = useCallback(() => {
     if (!renderedCanvasRef.current || totalW === 0 || totalH === 0) return;
@@ -471,6 +479,7 @@ export const App: React.FC = () => {
           onInvertMask={handleInvertMask}
           onClearMask={handleClearMask}
           onFillAllMask={handleFillAllMask}
+          onSmoothMask={handleSmoothMask}
           hasImage={image !== null}
           t={currentT.toolbar}
         />

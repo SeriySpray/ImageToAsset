@@ -33,6 +33,8 @@ export interface Translations {
     invertMaskTooltip: string;
     clearAll: string;
     clearAllTooltip: string;
+    smoothMask: string;
+    smoothMaskTooltip: string;
   };
   settings: {
     title: string;
@@ -112,6 +114,8 @@ export const translations: Record<Language, Translations> = {
       invertMaskTooltip: 'Інвертувати маску',
       clearAll: 'Очистити все',
       clearAllTooltip: 'Очистити всю маску',
+      smoothMask: 'Згладити та очистити маску',
+      smoothMaskTooltip: 'Очистити дрібний шум, порожнечі та згладити краї маски',
     },
     settings: {
       title: 'Налаштування',
@@ -193,6 +197,8 @@ export const translations: Record<Language, Translations> = {
       invertMaskTooltip: 'Invert selection mask',
       clearAll: 'Clear All',
       clearAllTooltip: 'Clear entire mask',
+      smoothMask: 'Smooth & Denoise Mask',
+      smoothMaskTooltip: 'Eliminate small noise fragments, pinholes, and smooth contour edges',
     },
     settings: {
       title: 'Settings',

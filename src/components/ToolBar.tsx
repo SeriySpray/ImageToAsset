@@ -9,6 +9,7 @@ import {
   Maximize,
   FlipHorizontal,
   Trash2,
+  Sparkles,
 } from 'lucide-react';
 import { ToolType } from '../types';
 import { Translations } from '../i18n';
@@ -23,6 +24,7 @@ interface ToolBarProps {
   onInvertMask: () => void;
   onClearMask: () => void;
   onFillAllMask: () => void;
+  onSmoothMask?: () => void;
   hasImage: boolean;
   t: Translations['toolbar'];
 }
@@ -35,6 +37,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
   onInvertMask,
   onClearMask,
   onFillAllMask,
+  onSmoothMask,
   hasImage,
   t,
 }) => {
@@ -149,6 +152,21 @@ export const ToolBar: React.FC<ToolBarProps> = ({
               {t.invertMask}
             </div>
           </button>
+
+          {/* Smooth & Denoise Mask */}
+          {onSmoothMask && (
+            <button
+              onClick={onSmoothMask}
+              title={t.smoothMaskTooltip}
+              aria-label={t.smoothMask}
+              className="w-8 h-8 rounded flex items-center justify-center text-neutral-400 hover:text-white hover:bg-[#181818] transition relative group cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <div className="hidden lg:block absolute left-full ml-2.5 px-2.5 py-1 bg-[#0a0a0a] border border-[#262626] text-white text-[11px] rounded whitespace-nowrap shadow-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition duration-150 z-50">
+                {t.smoothMask}
+              </div>
+            </button>
+          )}
 
           {/* Clear Mask */}
           <button

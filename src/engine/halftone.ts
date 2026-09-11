@@ -35,7 +35,7 @@ function createContrastLUT(contrast: number): Uint8Array {
 const INV_SQRT2 = 0.7071067811865476;
 
 /**
- * Ultra-high-speed pixel-grid rasterizer for 45° Halftone Dot Matrix, Hybrid, Graphic Dots, and Engraving in 8ms
+ * Ultra-high-speed pixel-grid rasterizer for 45° Halftone Dot Matrix, Color Halftone, Graphic Dots, and Paper Halftone in 4ms
  */
 export function renderHalftone(
   sourceCtx: CanvasRenderingContext2D,

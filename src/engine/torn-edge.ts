@@ -439,10 +439,13 @@ export function renderTornPaperAsset(
       }
       const clipCtx = reusableClipCanvas.getContext('2d');
       if (clipCtx) {
+        clipCtx.save();
+        clipCtx.globalCompositeOperation = 'source-over';
         clipCtx.clearRect(0, 0, width, height);
         clipCtx.drawImage(halftoneCanvas, 0, 0);
         clipCtx.globalCompositeOperation = 'destination-in';
         clipCtx.drawImage(maskCanvas, 0, 0);
+        clipCtx.restore();
 
         if (settings.dropShadow && (settings.shadowBlur ?? 50) > 0) {
           const blur = settings.shadowBlur ?? 50;
@@ -480,7 +483,7 @@ export function renderTornPaperAsset(
 
     const shadowMatches =
       cachedShadowCanvas !== null &&
-      cachedShadowMaskRef === maskCanvas &&
+      cachedShadowMaskRef === cachedAlphaMaskRef &&
       cachedShadowWidth === width &&
       cachedShadowHeight === height &&
       cachedShadowPadding === settings.padding &&
@@ -500,21 +503,24 @@ export function renderTornPaperAsset(
       }
       const sCtx = cachedShadowCanvas.getContext('2d');
       if (sCtx) {
-        sCtx.clearRect(0, 0, width, height);
         sCtx.save();
+        sCtx.globalCompositeOperation = 'source-over';
+        sCtx.clearRect(0, 0, width, height);
         sCtx.shadowColor = `rgba(0, 0, 0, ${opacity})`;
         sCtx.shadowBlur = blur;
         sCtx.shadowOffsetX = 0;
         sCtx.shadowOffsetY = offsetY;
         sCtx.drawImage(paperCanvas, 0, 0);
-        sCtx.restore();
 
         // Clip out the paper silhouette so cached shadow is 100% independent of paper color
+        sCtx.shadowColor = 'transparent';
+        sCtx.shadowBlur = 0;
         sCtx.globalCompositeOperation = 'destination-out';
         sCtx.drawImage(paperCanvas, 0, 0);
+        sCtx.restore();
       }
 
-      cachedShadowMaskRef = maskCanvas;
+      cachedShadowMaskRef = cachedAlphaMaskRef;
       cachedShadowWidth = width;
       cachedShadowHeight = height;
       cachedShadowPadding = settings.padding;
@@ -540,10 +546,14 @@ export function renderTornPaperAsset(
     }
     const clipCtx = reusableClipCanvas.getContext('2d');
     if (clipCtx) {
+      clipCtx.save();
+      clipCtx.globalCompositeOperation = 'source-over';
       clipCtx.clearRect(0, 0, width, height);
       clipCtx.drawImage(halftoneCanvas, 0, 0);
       clipCtx.globalCompositeOperation = 'destination-in';
       clipCtx.drawImage(maskCanvas, 0, 0);
+      clipCtx.restore();
+
       targetCtx.drawImage(reusableClipCanvas, 0, 0);
     }
   }

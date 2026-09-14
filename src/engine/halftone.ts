@@ -53,51 +53,24 @@ export function renderHalftone(
   const { mode, contrast, dotSize } = settings;
   const lut = createContrastLUT(contrast);
 
-  // 1. Generate High-Contrast Rich Grayscale Base
-  const grayCanvas = document.createElement('canvas');
-  grayCanvas.width = width;
-  grayCanvas.height = height;
-  const grayCtx = grayCanvas.getContext('2d', { willReadFrequently: true });
-  if (!grayCtx) return;
-
-  const grayImgData = grayCtx.createImageData(width, height);
-  const grayPixels32 = new Uint32Array(grayImgData.data.buffer);
+  // 1. Generate High-Contrast Perceptual Luminance directly
   const lumBytes = new Uint8Array(width * height);
-
   for (let i = 0; i < width * height; i++) {
     const idx = i * 4;
-    const a = srcPixels[idx + 3];
-
-    if (a < 5) {
-      grayPixels32[i] = 0x00000000; // Transparent
+    if (srcPixels[idx + 3] < 5) {
       lumBytes[i] = 255;
       continue;
     }
-
     const r = srcPixels[idx];
     const g = srcPixels[idx + 1];
     const b = srcPixels[idx + 2];
-
-    // Fast integer perceptual luminance (0.2126R + 0.7152G + 0.0722B)
     const rawLum = (r * 54 + g * 183 + b * 19) >> 8;
-    const finalVal = lut[rawLum];
-
-    lumBytes[i] = finalVal;
-    // Pack into 32-bit: 0xAABBGGRR
-    grayPixels32[i] = 0xFF000000 | (finalVal << 16) | (finalVal << 8) | finalVal;
+    lumBytes[i] = lut[rawLum];
   }
-
-  grayCtx.putImageData(grayImgData, 0, 0);
 
   // 2. Mode: True Color Halftone (Full per-pixel color halftone dot rasterization)
   if (mode === 'color-halftone') {
-    const htPatternCanvas = document.createElement('canvas');
-    htPatternCanvas.width = width;
-    htPatternCanvas.height = height;
-    const htCtx = htPatternCanvas.getContext('2d', { willReadFrequently: true });
-    if (!htCtx) return;
-
-    const patternImgData = htCtx.createImageData(width, height);
+    const patternImgData = targetCtx.createImageData(width, height);
     const patternPixels32 = new Uint32Array(patternImgData.data.buffer);
 
     const S = Math.max(2, dotSize);
@@ -187,8 +160,7 @@ export function renderHalftone(
       }
     }
 
-    htCtx.putImageData(patternImgData, 0, 0);
-    targetCtx.drawImage(htPatternCanvas, 0, 0);
+    targetCtx.putImageData(patternImgData, 0, 0);
 
     const t1 = performance.now();
     console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
@@ -197,13 +169,7 @@ export function renderHalftone(
 
   // 3. Mode: Classic Photo Halftone Raster
   if (mode === 'dots') {
-    const htPatternCanvas = document.createElement('canvas');
-    htPatternCanvas.width = width;
-    htPatternCanvas.height = height;
-    const htCtx = htPatternCanvas.getContext('2d', { willReadFrequently: true });
-    if (!htCtx) return;
-
-    const patternImgData = htCtx.createImageData(width, height);
+    const patternImgData = targetCtx.createImageData(width, height);
     const patternPixels32 = new Uint32Array(patternImgData.data.buffer);
 
     const S = Math.max(2, dotSize);
@@ -270,8 +236,7 @@ export function renderHalftone(
       }
     }
 
-    htCtx.putImageData(patternImgData, 0, 0);
-    targetCtx.drawImage(htPatternCanvas, 0, 0);
+    targetCtx.putImageData(patternImgData, 0, 0);
 
     const t1 = performance.now();
     console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
@@ -280,13 +245,7 @@ export function renderHalftone(
 
   // 3. Mode: Graphic & Line-Art Halftone Raster (Isolated Dots for Solid Black & Graphics)
   if (mode === 'graphic-dots') {
-    const htPatternCanvas = document.createElement('canvas');
-    htPatternCanvas.width = width;
-    htPatternCanvas.height = height;
-    const htCtx = htPatternCanvas.getContext('2d', { willReadFrequently: true });
-    if (!htCtx) return;
-
-    const patternImgData = htCtx.createImageData(width, height);
+    const patternImgData = targetCtx.createImageData(width, height);
     const patternPixels32 = new Uint32Array(patternImgData.data.buffer);
 
     const S = Math.max(2, dotSize);
@@ -361,8 +320,7 @@ export function renderHalftone(
       }
     }
 
-    htCtx.putImageData(patternImgData, 0, 0);
-    targetCtx.drawImage(htPatternCanvas, 0, 0);
+    targetCtx.putImageData(patternImgData, 0, 0);
 
     const t1 = performance.now();
     console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);
@@ -371,13 +329,7 @@ export function renderHalftone(
 
   // 4. Mode: Photo Halftone on Paper Backing (Continuous Photo Halftone on Paper Backing with Matching Color & Texture)
   if (mode === 'paper-halftone') {
-    const htPatternCanvas = document.createElement('canvas');
-    htPatternCanvas.width = width;
-    htPatternCanvas.height = height;
-    const htCtx = htPatternCanvas.getContext('2d', { willReadFrequently: true });
-    if (!htCtx) return;
-
-    const patternImgData = htCtx.createImageData(width, height);
+    const patternImgData = targetCtx.createImageData(width, height);
     const patternPixels32 = new Uint32Array(patternImgData.data.buffer);
 
     const S = Math.max(2, dotSize);
@@ -446,8 +398,7 @@ export function renderHalftone(
       }
     }
 
-    htCtx.putImageData(patternImgData, 0, 0);
-    targetCtx.drawImage(htPatternCanvas, 0, 0);
+    targetCtx.putImageData(patternImgData, 0, 0);
 
     const t1 = performance.now();
     console.log(`[ImageToAsset Perf] Halftone (${mode}) rendered in ${(t1 - t0).toFixed(2)}ms (size: ${width}x${height})`);

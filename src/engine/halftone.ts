@@ -42,8 +42,7 @@ export function renderHalftone(
   targetCtx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  settings: HalftoneSettings,
-  paperColor?: string
+  settings: HalftoneSettings
 ): void {
   const t0 = performance.now();
   targetCtx.clearRect(0, 0, width, height);
@@ -386,18 +385,8 @@ export function renderHalftone(
     const maxR2 = (S * S * 0.5) * 1.08;
     const marginDist = S * 2;
 
-    // Ink color: white ink on dark paper (e.g. graphite #1a1a1a), black ink on light/colored paper
-    const hex = (paperColor || '#ffffff').replace('#', '').trim();
-    const pr = parseInt(hex.substring(0, 2), 16) || 255;
-    const pg = parseInt(hex.substring(2, 4), 16) || 255;
-    const pb = parseInt(hex.substring(4, 6), 16) || 255;
-    const paperLum = (pr * 54 + pg * 183 + pb * 19) >> 8;
-    const isDarkPaper = paperLum < 100;
-
-    const inkR = isDarkPaper ? 255 : 0;
-    const inkG = isDarkPaper ? 255 : 0;
-    const inkB = isDarkPaper ? 255 : 0;
-    const inkRgb32 = (inkB << 16) | (inkG << 8) | inkR;
+    // Ink color: ALWAYS authentic black ink on paper backing without color inversion
+    const inkRgb32 = 0x000000;
 
     for (let y = 0; y < height; y++) {
       const rowOffset = y * width;
@@ -411,7 +400,7 @@ export function renderHalftone(
         }
 
         const sampleVal = lumBytes[i];
-        const darkness = isDarkPaper ? (sampleVal / 255) : ((255 - sampleVal) / 255);
+        const darkness = (255 - sampleVal) / 255;
 
         // Pure paper background (transparent to show paper color & texture)
         if (darkness <= 0.03) {

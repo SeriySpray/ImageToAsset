@@ -240,6 +240,10 @@ let cachedShadowRoughness = -1;
 let cachedShadowBlur = -1;
 let cachedShadowOpacity = -1;
 
+// Reusable buffers to avoid massive GC allocations on every frame
+let cachedPaperImgData: ImageData | null = null;
+let reusableClipCanvas: HTMLCanvasElement | null = null;
+
 export function renderPaperBacking(
   targetCanvas: HTMLCanvasElement,
   maskData: Uint8ClampedArray,
@@ -249,12 +253,17 @@ export function renderPaperBacking(
 ): void {
   const t0 = performance.now();
 
-  targetCanvas.width = width;
-  targetCanvas.height = height;
+  if (targetCanvas.width !== width || targetCanvas.height !== height) {
+    targetCanvas.width = width;
+    targetCanvas.height = height;
+  }
   const paperCtx = targetCanvas.getContext('2d', { willReadFrequently: true });
   if (!paperCtx) return;
 
-  const paperImgData = paperCtx.createImageData(width, height);
+  if (!cachedPaperImgData || cachedPaperImgData.width !== width || cachedPaperImgData.height !== height) {
+    cachedPaperImgData = paperCtx.createImageData(width, height);
+  }
+  const paperImgData = cachedPaperImgData;
   const pixels32 = new Uint32Array(paperImgData.data.buffer);
 
   // Parse paper background color into RGB safely supporting any 3- or 6-digit hex
@@ -283,26 +292,35 @@ export function renderPaperBacking(
 
   if (hasCachedAlpha) {
     const alphaField = cachedAlphaField!;
-    for (let y = 0; y < height; y++) {
-      const rowOffset = y * width;
-      const textureYOffset = (y & 511) * PAPER_TEXTURE_SIZE;
-      for (let x = 0; x < width; x++) {
-        const idx = rowOffset + x;
-        const alpha = alphaField[idx];
-        if (alpha === 0) {
-          pixels32[idx] = 0;
-          continue;
-        }
+    if (paperTexture) {
+      // 57-element LUT for paper grain texture (-28 to +28) to eliminate per-pixel Math calls
+      const lut = new Uint32Array(57);
+      for (let g = -28; g <= 28; g++) {
+        const gr = Math.max(0, Math.min(255, pr + g));
+        const gg = Math.max(0, Math.min(255, pg + Math.round(g * 0.96)));
+        const gb = Math.max(0, Math.min(255, pb + Math.round(g * 0.88)));
+        lut[g + 28] = (gb << 16) | (gg << 8) | gr;
+      }
 
-        if (paperTexture) {
+      for (let y = 0; y < height; y++) {
+        const rowOffset = y * width;
+        const textureYOffset = (y & 511) * PAPER_TEXTURE_SIZE;
+        for (let x = 0; x < width; x++) {
+          const idx = rowOffset + x;
+          const alpha = alphaField[idx];
+          if (alpha === 0) {
+            pixels32[idx] = 0;
+            continue;
+          }
           const grain = paperTextureMap[textureYOffset + (x & 511)];
-          const gr = Math.max(0, Math.min(255, pr + grain));
-          const gg = Math.max(0, Math.min(255, pg + Math.round(grain * 0.96)));
-          const gb = Math.max(0, Math.min(255, pb + Math.round(grain * 0.88)));
-          pixels32[idx] = (alpha << 24) | (gb << 16) | (gg << 8) | gr;
-        } else {
-          pixels32[idx] = (alpha << 24) | (pb << 16) | (pg << 8) | pr;
+          pixels32[idx] = (alpha << 24) | lut[grain + 28];
         }
+      }
+    } else {
+      const color24 = (pb << 16) | (pg << 8) | pr;
+      for (let i = 0; i < width * height; i++) {
+        const alpha = alphaField[i];
+        pixels32[i] = alpha === 0 ? 0 : (alpha << 24) | color24;
       }
     }
 
@@ -412,11 +430,16 @@ export function renderTornPaperAsset(
   if (!settings.enabled) {
     // If torn edge is disabled, draw halftone clipped directly to mask
     if (maskCanvas instanceof HTMLCanvasElement) {
-      const clippedCanvas = document.createElement('canvas');
-      clippedCanvas.width = width;
-      clippedCanvas.height = height;
-      const clipCtx = clippedCanvas.getContext('2d');
+      if (!reusableClipCanvas) {
+        reusableClipCanvas = document.createElement('canvas');
+      }
+      if (reusableClipCanvas.width !== width || reusableClipCanvas.height !== height) {
+        reusableClipCanvas.width = width;
+        reusableClipCanvas.height = height;
+      }
+      const clipCtx = reusableClipCanvas.getContext('2d');
       if (clipCtx) {
+        clipCtx.clearRect(0, 0, width, height);
         clipCtx.drawImage(halftoneCanvas, 0, 0);
         clipCtx.globalCompositeOperation = 'destination-in';
         clipCtx.drawImage(maskCanvas, 0, 0);
@@ -430,11 +453,11 @@ export function renderTornPaperAsset(
           targetCtx.shadowBlur = blur;
           targetCtx.shadowOffsetX = 0;
           targetCtx.shadowOffsetY = offsetY;
-          targetCtx.drawImage(clippedCanvas, 0, 0);
+          targetCtx.drawImage(reusableClipCanvas, 0, 0);
           targetCtx.restore();
         }
 
-        targetCtx.drawImage(clippedCanvas, 0, 0);
+        targetCtx.drawImage(reusableClipCanvas, 0, 0);
       }
     }
     return;
@@ -471,8 +494,10 @@ export function renderTornPaperAsset(
       if (!cachedShadowCanvas) {
         cachedShadowCanvas = document.createElement('canvas');
       }
-      cachedShadowCanvas.width = width;
-      cachedShadowCanvas.height = height;
+      if (cachedShadowCanvas.width !== width || cachedShadowCanvas.height !== height) {
+        cachedShadowCanvas.width = width;
+        cachedShadowCanvas.height = height;
+      }
       const sCtx = cachedShadowCanvas.getContext('2d');
       if (sCtx) {
         sCtx.clearRect(0, 0, width, height);
@@ -506,15 +531,20 @@ export function renderTornPaperAsset(
 
   // 4. Draw halftone artwork clipped strictly inside mask via hardware Canvas 2D
   if (maskCanvas instanceof HTMLCanvasElement) {
-    const clippedCanvas = document.createElement('canvas');
-    clippedCanvas.width = width;
-    clippedCanvas.height = height;
-    const clipCtx = clippedCanvas.getContext('2d');
+    if (!reusableClipCanvas) {
+      reusableClipCanvas = document.createElement('canvas');
+    }
+    if (reusableClipCanvas.width !== width || reusableClipCanvas.height !== height) {
+      reusableClipCanvas.width = width;
+      reusableClipCanvas.height = height;
+    }
+    const clipCtx = reusableClipCanvas.getContext('2d');
     if (clipCtx) {
+      clipCtx.clearRect(0, 0, width, height);
       clipCtx.drawImage(halftoneCanvas, 0, 0);
       clipCtx.globalCompositeOperation = 'destination-in';
       clipCtx.drawImage(maskCanvas, 0, 0);
-      targetCtx.drawImage(clippedCanvas, 0, 0);
+      targetCtx.drawImage(reusableClipCanvas, 0, 0);
     }
   }
 

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ToolType, Point, HalftoneSettings, TornEdgeSettings } from '../types';
 import { Translations } from '../i18n';
 import { renderHalftone } from '../engine/halftone';
@@ -180,8 +180,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (!image || !halftoneCanvasRef.current || !maskCanvasRef.current || !displayCanvasRef.current || totalW === 0 || totalH === 0) return;
 
     const dispCanvas = displayCanvasRef.current;
-    dispCanvas.width = totalW;
-    dispCanvas.height = totalH;
+    if (dispCanvas.width !== totalW || dispCanvas.height !== totalH) {
+      dispCanvas.width = totalW;
+      dispCanvas.height = totalH;
+    }
     const dispCtx = dispCanvas.getContext('2d');
     if (!dispCtx) return;
 
@@ -199,8 +201,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       if (!renderedCanvasRef.current) {
         renderedCanvasRef.current = document.createElement('canvas');
       }
-      renderedCanvasRef.current.width = totalW;
-      renderedCanvasRef.current.height = totalH;
+      if (renderedCanvasRef.current.width !== totalW || renderedCanvasRef.current.height !== totalH) {
+        renderedCanvasRef.current.width = totalW;
+        renderedCanvasRef.current.height = totalH;
+      }
       const refCtx = renderedCanvasRef.current.getContext('2d');
       if (refCtx) {
         refCtx.clearRect(0, 0, totalW, totalH);
@@ -227,17 +231,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     };
   }, []);
 
-  // Only re-compute halftone if dark/light paper threshold crosses in paper-halftone mode
-  const isDarkPaper = useMemo(() => {
-    if (halftone.mode !== 'paper-halftone') return false;
-    const hex = (tornEdge.paperColor || '#ffffff').replace('#', '').trim();
-    const pr = parseInt(hex.substring(0, 2), 16) || 255;
-    const pg = parseInt(hex.substring(2, 4), 16) || 255;
-    const pb = parseInt(hex.substring(4, 6), 16) || 255;
-    return ((pr * 54 + pg * 183 + pb * 19) >> 8) < 100;
-  }, [halftone.mode, tornEdge.paperColor]);
-
-  // Layer 1: Halftone Layer (Re-renders ONLY on halftone settings or source change, NOT on intermediate color drag!)
+  // Layer 1: Halftone Layer (Re-renders ONLY on halftone settings or source change, NEVER on paper color changes!)
   useEffect(() => {
     if (!image || !sourceCanvasRef.current || totalW === 0 || totalH === 0) return;
 
@@ -248,14 +242,16 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       halftoneCanvasRef.current = document.createElement('canvas');
     }
     const hCanvas = halftoneCanvasRef.current;
-    hCanvas.width = totalW;
-    hCanvas.height = totalH;
+    if (hCanvas.width !== totalW || hCanvas.height !== totalH) {
+      hCanvas.width = totalW;
+      hCanvas.height = totalH;
+    }
     const hCtx = hCanvas.getContext('2d');
     if (!hCtx) return;
 
-    renderHalftone(srcCtx, hCtx, totalW, totalH, halftone, tornEdge.paperColor);
+    renderHalftone(srcCtx, hCtx, totalW, totalH, halftone);
     requestComposite();
-  }, [image, halftone, isDarkPaper, totalW, totalH, requestComposite]);
+  }, [image, halftone, totalW, totalH, requestComposite]);
 
   // Layer 2: Paper Backing Layer (Instantaneous 1ms paper color update via cached alpha geometry!)
   useEffect(() => {
@@ -265,6 +261,10 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       paperCanvasRef.current = document.createElement('canvas');
     }
     const pCanvas = paperCanvasRef.current;
+    if (pCanvas.width !== totalW || pCanvas.height !== totalH) {
+      pCanvas.width = totalW;
+      pCanvas.height = totalH;
+    }
     if (mask) {
       renderPaperBacking(pCanvas, mask, totalW, totalH, tornEdge);
       requestComposite();
